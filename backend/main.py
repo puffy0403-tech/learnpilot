@@ -25,6 +25,8 @@ class PlanRequest(BaseModel):
 add_routes(app)
 from chat_planner import router as chat_router
 app.include_router(chat_router)
+from password_reset import router as password_reset_router
+app.include_router(password_reset_router)
 
 @app.get("/health")
 def health():
