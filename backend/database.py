@@ -20,6 +20,7 @@ def initialize():
         CREATE TABLE IF NOT EXISTS goals(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), subject TEXT NOT NULL, weekly_hours REAL NOT NULL CHECK(weekly_hours>0), target_score REAL, target_date TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS study_logs(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), study_date TEXT NOT NULL, subject TEXT NOT NULL, minutes INTEGER NOT NULL CHECK(minutes BETWEEN 0 AND 1440), note TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS plans(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), week_start TEXT NOT NULL, content TEXT NOT NULL, selected_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS planning_chats(user_id INTEGER NOT NULL REFERENCES users(id), week_start TEXT NOT NULL, messages TEXT NOT NULL DEFAULT '[]', summary TEXT NOT NULL DEFAULT '', ready INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(user_id,week_start));
         CREATE INDEX IF NOT EXISTS goals_owner ON goals(user_id);
         CREATE INDEX IF NOT EXISTS logs_owner ON study_logs(user_id);
         CREATE INDEX IF NOT EXISTS plans_owner ON plans(user_id);
