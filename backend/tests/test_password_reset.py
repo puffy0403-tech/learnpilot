@@ -116,3 +116,44 @@ def test_email_transport_uses_fixed_https_destination_and_fragment(monkeypatch):
     original = httpx.Client
     monkeypatch.setattr(httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs))
     assert reset.deliver_reset('owner@example.test', 'one-time-token', ('test-key', 'noreply@example.test', 'https://learn.example.test/'))
+
+
+@pytest.mark.parametrize('status,message,code', [
+    (403, 'You can only send testing emails to your own email address', 'MAIL_TEST_RECIPIENT'),
+    (403, 'The domain is not verified', 'MAIL_SENDER_DOMAIN'),
+    (401, 'Invalid API key', 'MAIL_AUTH'),
+    (403, 'Forbidden', 'MAIL_PERMISSION'),
+    (429, 'Rate limit', 'MAIL_LIMIT'),
+    (500, 'Internal error', 'MAIL_REJECTED'),
+])
+def test_delivery_error_guidance_never_logs_provider_secrets(monkeypatch, caplog, status, message, code):
+    original = httpx.Client
+    secret = 'private-provider-echo-token'
+    handler = lambda request: httpx.Response(status, json={'message': message + ' ' + secret + ' private@example.test'})
+    monkeypatch.setattr(httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs))
+    assert not reset.deliver_reset('owner@example.test', 'private-reset-token', ('private-key', 'sender@example.test', 'https://example.test/'))
+    assert code in caplog.text
+    for value in (secret, 'private@example.test', 'private-reset-token', 'private-key', 'owner@example.test'):
+        assert value not in caplog.text
+
+
+def test_connection_error_guidance_is_safe(monkeypatch, caplog):
+    original = httpx.Client
+    def handler(request):
+        raise httpx.ConnectError('secret-in-network-exception', request=request)
+    monkeypatch.setattr(httpx, 'Client', lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs))
+    assert not reset.deliver_reset('owner@example.test', 'private-reset-token', ('private-key', 'sender@example.test', 'https://example.test/'))
+    assert 'MAIL_CONNECTION' in caplog.text
+    assert 'secret-in-network-exception' not in caplog.text
+
+
+def test_unknown_account_and_throttle_visible_only_in_server_logs(recovery, caplog):
+    client, sent = recovery
+    response = client.post('/auth/forgot-password', json={'email': 'unknown@example.test'})
+    assert 'MAIL_ACCOUNT_NOT_FOUND' in caplog.text
+    assert 'MAIL_ACCOUNT_NOT_FOUND' not in response.text
+    caplog.clear()
+    response = client.post('/auth/forgot-password', json={'email': 'unknown@example.test'})
+    assert 'MAIL_THROTTLED' in caplog.text
+    assert 'MAIL_THROTTLED' not in response.text
+    assert not sent

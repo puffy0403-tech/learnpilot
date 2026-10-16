@@ -200,3 +200,21 @@ GitHub 更新不會自動修改電腦上的檔案。新版入口位於「登入�
 5. 在原本專案重新執行「啟動網頁.bat」，開啟登入頁並按 Ctrl+F5。
 
 若使用 `git pull` 更新，仍需停止舊服務並更新依賴後重新啟動。若使用部署網站，需部署最新 `main`、重新建置前端並重啟後端。只有完成更新後按鈕才會出現；真正寄信仍須另行設定 Resend。
+
+### 按下重設卻未收到信
+
+畫面的「申請已收到」不表示 Resend 已接受或送達。確認此 Email 是目前這個本機 SQLite 裡註冊的帳號；如果換了專案資料夾或資料庫，原帳號可能不在其中。連續點擊也會限流，請等 60 秒再試。
+
+更新後重新啟動後端，按一次寄送，再查看「LearnPilot Backend」視窗的 `MAIL_` 訊息（不含 Email、金鑰或連結）：
+
+- `MAIL_ACCOUNT_NOT_FOUND`：目前資料庫沒有符合的帳號，請確認註冊 Email 與資料庫位置；不要刪除既有資料庫。
+- `MAIL_THROTTLED`：等 60 秒再試。
+- `MAIL_TEST_RECIPIENT`：`onboarding@resend.dev` 測試寄件地址只能寄給 Resend 帳號本人的 Email。若要寄給其他人，請先驗證自己的寄件網域。
+- `MAIL_SENDER_DOMAIN` / `MAIL_PERMISSION`：確認寄件網域驗證成功、寄件地址正確、API key 有寄信權限。
+- `MAIL_AUTH`：金鑰無效；在 `.env` 更新金鑰後重啟後端。
+- `MAIL_LIMIT`：Resend 寄信額度或頻率受限。
+- `MAIL_CONNECTION`：本機網路、防火牆或 TLS 連線失敗，不要關閉憑證驗證。
+- `MAIL_REJECTED`：寄信服務拒絕，請查看 Resend 的 Logs。
+- `MAIL_ACCEPTED`：Resend 接受了請求，請至 Emails 查看 Delivered / Bounced 等狀態，並檢查收件匣、垃圾郵件及收信規則。
+
+排查時只提供以上代碼或遮蔽個資的服務錯誤，勿分享 API key、完整 `.env` 或重設連結。真實送達仍須在使用者本機及 Resend 設定中確認。
