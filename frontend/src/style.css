@@ -25,3 +25,12 @@ select{font:inherit;width:100%;padding:10px;border:1px solid #d4ded8;border-radi
 .reservation-editor{border:0;margin:0;padding:0;min-width:0}.chat-settings-sync{padding:10px 12px;background:#e1f0e6;color:#255c3c;border-radius:8px;font-size:14px}.reservation-editor:disabled{opacity:.7}
 
 .weekly-load{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin:16px 0}.weekly-load>div{background:#edf3ef;border-radius:10px;padding:12px}.weekly-load small,.weekly-load strong{display:block}.weekly-load strong{font-size:14px;margin-top:8px}
+
+.goal-progress{padding:50px 22px 0}
+.goal-progress-lane{position:relative}
+.goal-progress-lane progress{display:block;margin:0}
+.goal-progress-person{position:absolute;bottom:23px;width:44px;height:44px;transform:translateX(-50%);border:3px solid white;border-radius:50%;background:#e1eee7;box-shadow:0 2px 8px #24645730;transition:left .45s ease;z-index:1}
+.goal-progress-person::after{content:"";position:absolute;left:50%;bottom:-10px;transform:translateX(-50%);border:5px solid transparent;border-top-color:#347861}
+.goal-progress-person img,.goal-progress-person svg{display:block;width:100%;height:100%;border-radius:50%;object-fit:cover}
+.goal-progress-person svg{fill:#347861}
+@media(prefers-reduced-motion:reduce){.goal-progress-person{transition:none}}
