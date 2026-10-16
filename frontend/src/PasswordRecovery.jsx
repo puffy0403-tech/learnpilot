@@ -52,6 +52,7 @@ export default function PasswordRecovery({token, request, onBack, onReset}) {
     </>}
     {error && <p className="error" role="alert">{error}</p>}
     {message && <p className="success" role="status">{message}</p>}
+    {!resetMode && <p className="recovery-help">最近重新下載過專案？原帳號保存在原本電腦的資料庫。若未收到信，請確認使用原資料；可先關閉後端，再執行專案中的「還原原本帳號資料.bat」選取舊資料庫。只有程式檔無法還原帳號。</p>}
     {resetMode && !complete && <button className="ghost" disabled={busy} onClick={() => {setResetMode(false); setError(''); setMessage('');}}>重新申請連結</button>}
     <button className="ghost" disabled={busy} onClick={onBack}>返回登入</button>
   </main>;

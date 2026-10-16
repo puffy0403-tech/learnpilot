@@ -34,6 +34,10 @@ for %%F in (backend\requirements.txt backend\.env.example frontend\package.json 
     call :copyfile "%%F"
     if errorlevel 1 goto failed
 )
+for %%F in ("%SOURCE_DIR%\*.bat") do (
+    call :copyfile "%%~nxF"
+    if errorlevel 1 goto failed
+)
 echo Update completed. Previous files: %BACKUP_DIR%
 echo Refresh dependencies before restarting:
 echo   backend\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt

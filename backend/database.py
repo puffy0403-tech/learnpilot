@@ -1,10 +1,11 @@
-import os, sqlite3, hashlib, secrets, time, json
+import os, sqlite3, hashlib, secrets, time, json, logging
 from pathlib import Path
 from fastapi import HTTPException, Request, Depends
 from pydantic import BaseModel, Field, ConfigDict
 from datetime import date, datetime
+from local_storage import default_database_path
 
-DB_PATH = Path(os.getenv('DATABASE_PATH', str(Path(__file__).parent / 'data' / 'learnpilot.db')))
+DB_PATH = Path(os.getenv('DATABASE_PATH') or default_database_path(Path(__file__).parent))
 def connect():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(DB_PATH, timeout=30)
@@ -27,6 +28,8 @@ def initialize():
         CREATE INDEX IF NOT EXISTS logs_owner ON study_logs(user_id);
         CREATE INDEX IF NOT EXISTS plans_owner ON plans(user_id);
         ''')
+        count = c.execute('SELECT count(*) FROM users').fetchone()[0]
+    logging.getLogger('uvicorn.error.storage').info('DATA_LOCATION: %s | 帳號數：%s', DB_PATH.resolve(), count)
 
 def user_view(row):
     return {'id':row['id'], 'email':row['email'], 'user_metadata':json.loads(row['metadata'])}

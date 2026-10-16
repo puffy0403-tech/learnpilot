@@ -14,6 +14,12 @@ if not exist "frontend\node_modules" (
     exit /b 1
 )
 
+"backend\.venv\Scripts\python.exe" "backend\check_startup.py"
+if errorlevel 1 (
+    pause
+    exit /b 1
+)
+
 start "LearnPilot Backend" /D "%~dp0backend" cmd /k ".venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000"
 
 start "LearnPilot Frontend" /D "%~dp0frontend" cmd /k "npm.cmd run dev -- --port 5173 --strictPort"
