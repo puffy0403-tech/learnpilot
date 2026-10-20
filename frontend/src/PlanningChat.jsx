@@ -1,5 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {Reservations} from './features.jsx';
+import DailyPlan from './DailyPlan.jsx';
 
 const examples=[
  '我這週要準備英文考試，但不知道怎麼分配單字、閱讀和聽力，可以先幫我釐清嗎？',
@@ -62,7 +63,7 @@ export default function PlanningChat({request,userId,start,setStart,fixed,setFix
   {draft&&<section className="chat-draft"><h2>建議計畫草稿</h2><p>{draft.summary}</p><p><small>{draft.source}</small></p>{draft.weekly_distribution&&<div className="weekly-load" aria-label="七天讀書時數分配">{draft.weekly_distribution.map(r=><div key={r.date}><small>{r.date}</small><strong>{r.minutes>0?`${r.minutes} 分鐘`:'休息／未安排'}</strong></div>)}</div>}{draft.assumptions.length>0&&<><h3>安排依據與假設</h3><ul>{draft.assumptions.map((x,i)=><li key={i}>{x}</li>)}</ul></>}
     <details><summary>對話確認的可用時段與固定事項</summary>{draft.availability_windows.map((w,i)=><p key={i}>{w.date} {w.start_time}–{w.end_time}</p>)}{draft.fixed_items.map((r,i)=><p key={i}>{r.kind==='blocked'?'保留空白':'固定待辦'}：{r.date} {r.start_time} · {r.minutes} 分鐘 · {r.content||r.subject}</p>)}</details>
     {draft.unplaced.length>0&&<div className="error" role="alert">可用時間不足，尚未安排：{draft.unplaced.map(r=>`${r.subject} ${r.minutes} 分鐘`).join('、')}。可以回到對話調整目標或增加可用時間。</div>}
-    <div className="chat-draft-scroll"><table className="chat-draft-table"><thead><tr><th>日期</th><th>開始時間</th><th>科目</th><th>分鐘</th><th>學習內容</th></tr></thead><tbody>{draft.items.filter(r=>r.kind==='study').map((r,i)=><tr key={i}><td>{r.date}</td><td>{r.start_time}</td><td>{r.subject}</td><td>{r.minutes}</td><td>{r.content}</td></tr>)}</tbody></table></div>
+    <DailyPlan rows={draft.items.filter(r=>r.kind==='study')}/>
     <button disabled={!!pending||!draft.items.some(r=>r.kind==='study')} onClick={()=>onImport(draft)}>匯入目前計畫編輯區</button><p><small>匯入後可修改科目與內容，最後按「儲存計畫並查看日曆」。</small></p>
   </section>}
  </>;

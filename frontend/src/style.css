@@ -40,3 +40,35 @@ select{font:inherit;width:100%;padding:10px;border:1px solid #d4ded8;border-radi
 .completion-control label{display:flex;align-items:center;gap:10px;margin:0;font-weight:600;cursor:pointer}
 .completion-control input[type="checkbox"]{width:20px;height:20px;margin:0;accent-color:#2563eb;flex-shrink:0}
 .completion-control small{display:block;margin-top:8px;color:#475569}
+
+/* Daily plan reading and editing cards */
+.plan-reading{margin:28px 0 18px;text-align:left}
+.daily-plan{display:grid;gap:20px;text-align:left;min-width:0}
+.daily-plan-day{margin:0;padding:0;overflow:hidden;border:1px solid #d9e7df;border-radius:16px;background:#fff;box-shadow:0 3px 12px #203e2f06}
+.daily-plan-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:18px 22px;background:#edf5f0;border-bottom:1px solid #d9e7df;text-align:left}
+.daily-plan-heading>div{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.daily-plan-heading h3{font-size:16px;margin:0;color:#243e33}
+.daily-plan-heading .daily-plan-weekday{display:inline-block;padding:5px 10px;border-radius:7px;background:#d7e9df;color:#23523d;font-size:14px;font-weight:700;letter-spacing:0}
+.daily-plan-heading .daily-plan-total{font-size:13px;letter-spacing:0;color:#52695c}
+.daily-plan-items{display:grid;gap:12px;padding:16px}
+.daily-plan-item{display:grid;grid-template-columns:minmax(160px,1fr) minmax(0,3fr);gap:20px;padding:20px;border:1px solid #e1eae5;border-left:4px solid #348562;border-radius:10px;background:#fbfdfb;text-align:left;align-items:start}
+.daily-plan-item-heading{display:flex;gap:16px;align-items:flex-start;min-width:0}
+.daily-plan-time{color:#2c5b47;font-size:16px;font-weight:700;flex-shrink:0;font-variant-numeric:tabular-nums}
+.daily-plan-time small{display:block;margin-top:5px;font-size:12px;font-weight:400;color:#657a6e}
+.daily-plan-kind{font-size:11px;color:#657a6e}
+.daily-plan-item h4{margin:5px 0 0;font-size:16px;line-height:1.6;overflow-wrap:anywhere}
+.daily-plan-content,.daily-plan-notes p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;text-align:left;line-height:1.9;font-size:14px;color:#34483d}
+.daily-plan-item.todo{border-left-color:#d88900;background:#fffaf0}
+.daily-plan-item.blocked{border-left-color:#64748b;background:#f5f7fa}
+.daily-plan-item.completed{border-left-color:#3b82f6;background:#f0f6ff}
+.daily-plan-item.completed .daily-plan-kind{color:#1e40af;font-weight:700}
+.daily-plan-notes{padding:20px 22px;border:1px dashed #bdcfc3;border-radius:12px;background:#f8fbf9}
+.daily-plan-notes h3{margin:0 0 10px;font-size:15px}
+.plan-editor-day{margin:20px 0;padding:20px;border:1px solid #d9e7df;border-radius:14px;background:#f4f9f6;text-align:left}
+.plan-editor-day>h3{margin:0 0 16px;color:#285a43}
+.plan-editor-day .planrow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:start;gap:0 14px;padding:16px;margin-top:12px;background:white;border:1px solid #e0e9e3;border-radius:10px}
+.plan-editor-day .planrow label{text-align:left;min-width:0}
+.plan-editor-day .plan-field-content,.plan-editor-day .slot-hint{grid-column:1/-1}
+.plan-editor-day textarea{min-height:110px;resize:vertical;line-height:1.8;text-align:left}
+.plan-editor-day .planrow>button{grid-column:1/-1;justify-self:start;margin-top:10px}
+@media(max-width:700px){.daily-plan-item{grid-template-columns:1fr;gap:14px;padding:16px}.daily-plan-heading{padding:15px 16px}.daily-plan-items{padding:12px}.plan-editor-day{padding:14px}.plan-editor-day .planrow{grid-template-columns:repeat(2,minmax(0,1fr));padding:12px}}
