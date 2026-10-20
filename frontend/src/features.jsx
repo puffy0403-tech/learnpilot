@@ -71,7 +71,7 @@ export function Calendar({rows,start,onStart,onComplete}) {
           {onComplete&&<div className="completion-control">
             <label><input type="checkbox" checked={completed(selected)} disabled={saving} onChange={e=>changeCompletion(e.target.checked)}/>已完成這項讀書計畫</label>
             {selected.segment&&<small>完成標記會套用至此原計畫的所有分段。</small>}
-            <small>完成標記不會自動新增學習紀錄。</small>
+            <small>勾選後依計畫日期與分鐘自動加入學習紀錄；取消時移除對應的自動紀錄，保留手動紀錄。</small>
             {saving&&<p role="status">正在儲存完成狀態…</p>}
             {error&&<p className="error" role="alert">{error}</p>}
           </div>}

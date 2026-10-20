@@ -29,7 +29,7 @@ def mark(client, plan, index=0, completed=True):
     return client.patch(f"/plans/{plan['id']}/items/{index}/completion", json={'completed': completed, 'original_content': plan['content']})
 
 
-def test_complete_persists_and_can_be_undone_without_adding_study_logs(saved_plan):
+def test_complete_persists_and_can_be_undone_with_study_logs(saved_plan):
     owner, _, plan = saved_plan
     response = mark(owner, plan)
     assert response.status_code == 200
@@ -42,11 +42,16 @@ def test_complete_persists_and_can_be_undone_without_adding_study_logs(saved_pla
     assert parsed['items'][0]['completed'] is True
     assert parsed['notes'] == '保留備註'
     assert parsed['daily_starts'] == {'0': '08:00'}
-    assert owner.get('/data/study_logs').json() == []
+    logs = owner.get('/data/study_logs').json()
+    assert len(logs) == 1
+    assert logs[0]['minutes'] == 60
+    assert logs[0]['study_date'] == '2026-10-19'
+    assert logs[0]['subject'] == '英文'
     fresh = TestClient(app)
     assert fresh.post('/auth/login', json={'email': 'owner@example.test', 'password': 'test-password'}).status_code == 200
     restored = fresh.get('/data/plans').json()[0]
     assert mark(fresh, restored, completed=False).json()['items'][0]['completed'] is False
+    assert fresh.get('/data/study_logs').json() == []
 
 
 def test_completion_requires_ownership_and_login(saved_plan):
@@ -114,3 +119,44 @@ def test_completion_retains_availability_windows(saved_plan):
     parsed = owner.post('/plans/parse', json=result['plan']).json()
     assert parsed['availability_windows'] == windows
     assert parsed['items'][0]['completed'] is True
+
+
+
+def test_repeated_completion_does_not_duplicate_and_manual_logs_survive(saved_plan):
+    owner, _, plan = saved_plan
+    manual = owner.post('/data/study_logs', json={'study_date': '2026-10-19', 'subject': '英文', 'minutes': 60, 'note': '手動紀錄'}).json()
+    updated = mark(owner, plan).json()['plan']
+    repeated = mark(owner, updated).json()['plan']
+    assert len(owner.get('/data/study_logs').json()) == 2
+    mark(owner, repeated, completed=False)
+    assert owner.get('/data/study_logs').json() == [manual]
+
+
+def test_uncheck_uses_stable_key_after_reordering_plan(saved_plan):
+    owner, _, plan = saved_plan
+    updated = mark(owner, plan).json()['plan']
+    parsed = owner.post('/plans/parse', json=updated).json()
+    parsed['items'][0]['start_time'] = '11:00'
+    serialized = owner.post('/plans/serialize', json={'week_start': plan['week_start'], **parsed}).json()
+    edited = owner.patch(f"/data/plans/{plan['id']}", json={**serialized, 'original_content': updated['content']}).json()
+    items = owner.post('/plans/parse', json=edited).json()['items']
+    index = next(i for i, item in enumerate(items) if item.get('completed'))
+    assert index == 1
+    assert mark(owner, edited, index=index, completed=False).status_code == 200
+    assert owner.get('/data/study_logs').json() == []
+
+
+def test_manual_deletion_of_auto_log_allows_recreation(saved_plan):
+    owner, _, plan = saved_plan
+    first = mark(owner, plan).json()
+    log = first['study_logs'][0]
+    assert owner.delete(f"/data/study_logs/{log['id']}").status_code == 200
+    assert len(mark(owner, first['plan']).json()['study_logs']) == 1
+
+
+def test_other_user_cannot_change_auto_logs(saved_plan):
+    owner, other, plan = saved_plan
+    updated = mark(owner, plan).json()['plan']
+    assert mark(other, updated, completed=False).status_code == 404
+    assert other.get('/data/study_logs').json() == []
+    assert len(owner.get('/data/study_logs').json()) == 1

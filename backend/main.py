@@ -1,4 +1,5 @@
 import os
+import uuid
 from datetime import date
 import pandas as pd
 from dotenv import load_dotenv
@@ -55,13 +56,29 @@ def complete_item(plan_id: int, item_index: int, p: CompletionRequest, user=Depe
                 raise HTTPException(404, '讀書項目不存在')
             if rows[item_index].get('kind', 'study') != 'study':
                 raise HTTPException(422, '只有讀書計畫可標記完成。')
-            rows[item_index]['completed'] = p.completed
+            item = rows[item_index]
+            item['completion_key'] = item.get('completion_key') or uuid.uuid4().hex
+            item['completed'] = p.completed
             _, content = serialize_editable_plan(rows, notes, starts, windows)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from None
+        link = c.execute('SELECT log_id FROM plan_completion_logs WHERE plan_id=? AND item_key=?', (plan_id, item['completion_key'])).fetchone()
+        if p.completed:
+            if not link or link['log_id'] is None:
+                minutes = float(item['minutes'])
+                if not minutes.is_integer():
+                    raise HTTPException(422, '學習紀錄須為整數分鐘，請先調整此計畫時數。')
+                log = c.execute('INSERT INTO study_logs(user_id,study_date,subject,minutes,note) VALUES(?,?,?,?,?)',
+                    (user['id'], str(item['date'])[:10], item['subject'], int(minutes), '讀書計畫完成自動紀錄：' + str(item.get('content', ''))))
+                c.execute('INSERT INTO plan_completion_logs(plan_id,item_key,log_id) VALUES(?,?,?) ON CONFLICT(plan_id,item_key) DO UPDATE SET log_id=excluded.log_id',
+                    (plan_id, item['completion_key'], log.lastrowid))
+        elif link:
+            c.execute('DELETE FROM study_logs WHERE id=? AND user_id=?', (link['log_id'], user['id']))
+            c.execute('DELETE FROM plan_completion_logs WHERE plan_id=? AND item_key=?', (plan_id, item['completion_key']))
         c.execute('UPDATE plans SET content=? WHERE id=? AND user_id=?', (content, plan_id, user['id']))
         updated = dict(c.execute('SELECT * FROM plans WHERE id=?', (plan_id,)).fetchone())
-    return {'plan': updated, 'items': rows}
+        logs = [dict(row) for row in c.execute('SELECT * FROM study_logs WHERE user_id=? ORDER BY id DESC', (user['id'],))]
+    return {'plan': updated, 'items': rows, 'study_logs': logs}
 
 @app.post("/plans/parse")
 async def parse(p: PlanRequest, user=Depends(current_user)):

@@ -36,7 +36,7 @@ async function completeCalendarItem(itemIndex,completed){
   if(calendarSnapshot.current?.id!==latest.id||calendarSnapshot.current?.content!==latest.content)throw new Error('計畫正在更新，請稍候再勾選。');
   try{
     const result=await request(`/plans/${latest.id}/items/${itemIndex}/completion`,{completed,original_content:latest.content},'PATCH');
-    D(current=>({...current,plans:current.plans.map(p=>p.id===result.plan.id?result.plan:p)}));
+    D(current=>({...current,plans:current.plans.map(p=>p.id===result.plan.id?result.plan:p),study_logs:result.study_logs}));
     calendarSnapshot.current=result.plan;C(result.items);
   }catch(error){try{await load()}catch{}throw error}
 }

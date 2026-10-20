@@ -232,7 +232,19 @@ def serialize_editable_plan(rows, notes, daily_starts=None, availability_windows
             raise ValueError("只有讀書計畫可標記完成。")
         if 'completed' in row:
             cleaned[-1]['completed'] = completed
+        if row.get('completion_key'):
+            key = row['completion_key']
+            if not isinstance(key, str) or not re.fullmatch(r'[0-9a-f]{32}', key):
+                raise ValueError('完成紀錄識別碼格式錯誤。')
+            cleaned[-1]['completion_key'] = key
     cleaned = fit_calendar_slots(cleaned, daily_starts, availability_windows)
+    seen_completion_keys = set()
+    for row in cleaned:
+        key = row.get('completion_key')
+        if key in seen_completion_keys:
+            row.pop('completion_key', None)
+        elif key:
+            seen_completion_keys.add(key)
     for i, a in enumerate(cleaned):
         for b in cleaned[:i]:
             if a["date"] == b["date"]:
