@@ -4,7 +4,7 @@ import pandas as pd
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from planning import build_rule_based_plan, editable_plan_data, serialize_editable_plan, schedule_available, ensure_study_content, fit_calendar_slots, plan_daily_starts, plan_availability
 
 load_dotenv()
@@ -22,6 +22,11 @@ class PlanRequest(BaseModel):
     daily_starts: dict[str, str] = {}
     availability_windows: list[dict] | None = None
 
+class CompletionRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    completed: StrictBool
+    original_content: str = Field(min_length=1, max_length=500000)
+
 add_routes(app)
 from chat_planner import router as chat_router
 app.include_router(chat_router)
@@ -31,6 +36,32 @@ app.include_router(password_reset_router)
 @app.get("/health")
 def health():
     return {"ok": True}
+
+@app.patch('/plans/{plan_id}/items/{item_index}/completion')
+def complete_item(plan_id: int, item_index: int, p: CompletionRequest, user=Depends(current_user)):
+    with connect() as c:
+        c.execute('BEGIN IMMEDIATE')
+        plan = c.execute('SELECT * FROM plans WHERE id=? AND user_id=?', (plan_id, user['id'])).fetchone()
+        if not plan:
+            raise HTTPException(404, '計畫不存在')
+        if plan['content'] != p.original_content:
+            raise HTTPException(409, '計畫已變更，請重新整理後再勾選。')
+        try:
+            rows, notes = editable_plan_data(plan['content'], date.fromisoformat(plan['week_start']))
+            starts = plan_daily_starts(plan['content'])
+            windows = plan_availability(plan['content'])
+            rows = fit_calendar_slots(rows, starts, windows)
+            if not 0 <= item_index < len(rows):
+                raise HTTPException(404, '讀書項目不存在')
+            if rows[item_index].get('kind', 'study') != 'study':
+                raise HTTPException(422, '只有讀書計畫可標記完成。')
+            rows[item_index]['completed'] = p.completed
+            _, content = serialize_editable_plan(rows, notes, starts, windows)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        c.execute('UPDATE plans SET content=? WHERE id=? AND user_id=?', (content, plan_id, user['id']))
+        updated = dict(c.execute('SELECT * FROM plans WHERE id=?', (plan_id,)).fetchone())
+    return {'plan': updated, 'items': rows}
 
 @app.post("/plans/parse")
 async def parse(p: PlanRequest, user=Depends(current_user)):

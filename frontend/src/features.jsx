@@ -6,7 +6,81 @@ const itemKind=r=>['blocked','todo','study'].includes(r.kind)?r.kind:({'保留�
 const kindName=r=>({blocked:'保留空白',todo:'固定待辦',study:'讀書計畫'}[itemKind(r)]||'讀書計畫');
 const stamp=r=>new Date(`${r.date}T${r.start_time||'08:00'}:00`).getTime();
 export function Reservations({items,setItems,start,title='先保留空白時間與固定待辦',description='保留時間不會排入學習。固定待辦也會佔用時段；AI 只安排剩餘空檔（依每日開始時間至 22:00）。'}){return <><h3>{title}</h3><p>{description}</p>{items.map((r,i)=><div className={'planrow reservation-row '+itemKind(r)} key={i}><span className="reservation-kind">{kindName(r)}</span><label>日期<input type="date" value={r.date} onChange={e=>setItems(items.map((x,j)=>j===i?{...x,date:e.target.value}:x))}/></label><label>開始時間<input type="time" value={r.start_time} onChange={e=>setItems(items.map((x,j)=>j===i?{...x,start_time:e.target.value}:x))}/></label><label>分鐘<input type="number" min="1" max="1440" value={r.minutes} onChange={e=>setItems(items.map((x,j)=>j===i?{...x,minutes:e.target.valueAsNumber}:x))}/></label><label>說明<input value={r.content} onChange={e=>setItems(items.map((x,j)=>j===i?{...x,content:e.target.value}:x))}/></label><button className="ghost" onClick={()=>setItems(items.filter((_,j)=>j!==i))}>移除</button></div>)}<div className="actions">{[['blocked','保留空白'],['todo','固定待辦']].map(([kind,label])=><button key={kind} className={'ghost reservation-add '+kind} onClick={()=>setItems([...items,{date:start,start_time:'12:00',minutes:120,subject:label,content:'',kind}])}>＋{label}</button>)}</div></>}
-export function Calendar({rows,start,onStart}){rows=rows.flatMap(r=>{const start=timeMinutes(planStart(r)),duration=Number(r.minutes),end=start+duration;let segments=[];for(let slot=Math.floor(start/120);slot<12&&slot*120<Math.max(start+1,end);slot++){const begin=Math.max(start,slot*120),finish=Math.min(end,(slot+1)*120);segments.push({...r,kind:itemKind(r),start_time:`${String(Math.floor(begin/60)).padStart(2,'0')}:${String(begin%60).padStart(2,'0')}`,minutes:Math.max(0,finish-begin),original_start:planStart(r),original_minutes:duration,segment:duration>120||end>(Math.floor(start/120)+1)*120});}return segments;});const [selected,select]=useState(null);const [currentDay,setCurrentDay]=useState(()=>dateISO(new Date()));useEffect(()=>{const id=setInterval(()=>setCurrentDay(dateISO(new Date())),30000);return()=>clearInterval(id)},[]);let dates=Array.from({length:7},(_,i)=>{let d=new Date(start+'T00:00:00');d.setDate(d.getDate()+i);return dateISO(d)});return <><div className="calendar-legend" aria-label="日曆顏色說明"><span className="legend blocked">保留空白</span><span className="legend todo">固定待辦</span><span className="legend study">讀書計畫</span><span className="legend today">今天</span></div><div className="calendar-scroll"><table className="week-calendar"><thead><tr><th>時段</th>{dates.map((d,i)=><th key={d} className={d===currentDay?'today-column':''} aria-current={d===currentDay?'date':undefined}>{['週一','週二','週三','週四','週五','週六','週日'][new Date(d+'T00:00:00').getDay()===0?6:new Date(d+'T00:00:00').getDay()-1]}<small>{d}</small>{d===currentDay&&<span className="today-badge">今天</span>}</th>)}</tr></thead><tbody>{Array.from({length:12},(_,slot)=><tr key={slot}><th>{String(slot*2).padStart(2,'0')}:00<br/>–{String(slot*2+2).padStart(2,'0')}:00</th>{dates.map(d=><td key={d} className={(d===currentDay?'today-column ':'')+(!rows.some(r=>r.date===d&&timeMinutes(r.start_time)<slot*120+120&&timeMinutes(r.start_time)+Math.max(1,r.minutes)>slot*120)?'empty-slot':'')}>{!rows.some(r=>r.date===d&&timeMinutes(r.start_time)<slot*120+120&&timeMinutes(r.start_time)+Math.max(1,r.minutes)>slot*120)&&<span className="empty-label">空白／未安排</span>}{rows.filter(r=>r.date===d&&timeMinutes(r.start_time)<slot*120+120&&timeMinutes(r.start_time)+Math.max(1,r.minutes)>slot*120).map((r,j)=><button data-kind={r.kind} className={'task '+r.kind} key={j} onClick={()=>select(r)}><small className="kind-label">{kindName(r)}</small><b>{r.subject}</b><span>{r.start_time||'08:00'} · {r.minutes} 分鐘</span><span className="preview">{r.content||'點選查看詳細內容'}</span></button>)}</td>)}</tr>)}</tbody></table></div>{selected&&<div className="modal-backdrop" onClick={()=>select(null)}><section role="dialog" aria-modal="true" aria-label="時段詳細計畫" className="modal" onClick={e=>e.stopPropagation()}><button className="ghost" autoFocus onClick={()=>select(null)}>關閉</button><h2>{selected.subject}</h2><p className={'detail-kind '+(selected.kind||'study')}>{kindName(selected)}</p><dl className="plan-details">{selected.segment&&<><dt>原計畫</dt><dd>{selected.original_start} 開始，共 {selected.original_minutes} 分鐘；以下為目前點選時段。</dd></>}<dt>日期</dt><dd>{selected.date}</dd><dt>起始時間</dt><dd>{planStart(selected)}</dd><dt>結束時間</dt><dd>{(()=>{let end=timeMinutes(planStart(selected))+Number(selected.minutes);return `${String(Math.floor(end/60)).padStart(2,'0')}:${String(end%60).padStart(2,'0')}`})()}</dd><dt>{(!selected.kind||selected.kind==='study')?'讀書時數':'佔用時數'}</dt><dd>{selected.minutes} 分鐘（{(selected.minutes/60).toFixed(2)} 小時）</dd><dt>{(!selected.kind||selected.kind==='study')?'讀書計畫':'事項說明'}</dt><dd><pre>{selected.content||'尚未填寫內容'}</pre></dd></dl>{(!selected.kind||selected.kind==='study')&&<button onClick={()=>{onStart(selected);select(null)}}>開始倒計時</button>}</section></div>}</>}
+export function Calendar({rows,start,onStart,onComplete}) {
+  const segments=rows.flatMap((r,itemIndex)=>{
+    const beginAt=timeMinutes(planStart(r)),duration=Number(r.minutes),end=beginAt+duration;
+    const parts=[];
+    for(let slot=Math.floor(beginAt/120);slot<12&&slot*120<Math.max(beginAt+1,end);slot++){
+      const begin=Math.max(beginAt,slot*120),finish=Math.min(end,(slot+1)*120);
+      parts.push({...r,kind:itemKind(r),itemIndex,key:`${itemIndex}/${slot}`,
+        start_time:`${String(Math.floor(begin/60)).padStart(2,'0')}:${String(begin%60).padStart(2,'0')}`,
+        minutes:Math.max(0,finish-begin),original_start:planStart(r),original_minutes:duration,
+        segment:duration>120||end>(Math.floor(beginAt/120)+1)*120});
+    }
+    return parts;
+  });
+  const [selectedKey,select]=useState(null),[saving,setSaving]=useState(false),[error,setError]=useState('');
+  const [currentDay,setCurrentDay]=useState(()=>dateISO(new Date()));
+  const selected=segments.find(r=>r.key===selectedKey);
+  useEffect(()=>{const id=setInterval(()=>setCurrentDay(dateISO(new Date())),30000);return()=>clearInterval(id)},[]);
+  const dates=Array.from({length:7},(_,i)=>{const d=new Date(start+'T00:00:00');d.setDate(d.getDate()+i);return dateISO(d)});
+  const completed=r=>r.kind==='study'&&r.completed===true;
+  const label=r=>completed(r)?'✓ 已完成':kindName(r);
+  async function changeCompletion(value){
+    if(saving||!selected)return;
+    setSaving(true);setError('');
+    try{await onComplete(selected.itemIndex,value)}catch(e){setError(e.message||'儲存失敗，請重試。')}
+    finally{setSaving(false)}
+  }
+  function close(){if(!saving){select(null);setError('')}}
+  return <>
+    <div className="calendar-legend" aria-label="日曆顏色說明">
+      <span className="legend blocked">保留空白</span><span className="legend todo">固定待辦</span>
+      <span className="legend study">讀書計畫</span><span className="legend completed">✓ 已完成</span><span className="legend today">今天</span>
+    </div>
+    <div className="calendar-scroll"><table className="week-calendar"><thead><tr><th>時段</th>
+      {dates.map(d=><th key={d} className={d===currentDay?'today-column':''} aria-current={d===currentDay?'date':undefined}>
+        {['週一','週二','週三','週四','週五','週六','週日'][(new Date(d+'T00:00:00').getDay()+6)%7]}<small>{d}</small>
+        {d===currentDay&&<span className="today-badge">今天</span>}
+      </th>)}
+    </tr></thead><tbody>{Array.from({length:12},(_,slot)=><tr key={slot}>
+      <th>{String(slot*2).padStart(2,'0')}:00<br/>–{String(slot*2+2).padStart(2,'0')}:00</th>
+      {dates.map(d=>{
+        const items=segments.filter(r=>r.date===d&&timeMinutes(r.start_time)<slot*120+120&&timeMinutes(r.start_time)+Math.max(1,r.minutes)>slot*120);
+        return <td key={d} className={(d===currentDay?'today-column ':'')+(!items.length?'empty-slot':'')}>
+          {!items.length&&<span className="empty-label">空白／未安排</span>}
+          {items.map(r=><button data-kind={r.kind} data-completed={completed(r)?'true':'false'} className={'task '+r.kind+(completed(r)?' completed':'')} key={r.key} onClick={()=>{select(r.key);setError('')}}>
+            <small className="kind-label">{label(r)}</small><b>{r.subject}</b>
+            <span>{r.start_time} · {r.minutes} 分鐘</span><span className="preview">{r.content||'點選查看詳細內容'}</span>
+          </button>)}
+        </td>;
+      })}
+    </tr>)}</tbody></table></div>
+    {selected&&<div className="modal-backdrop" onClick={close}>
+      <section role="dialog" aria-modal="true" aria-label="時段詳細計畫" className="modal" onClick={e=>e.stopPropagation()}>
+        <button className="ghost" autoFocus disabled={saving} onClick={close}>關閉</button><h2>{selected.subject}</h2>
+        <p className={'detail-kind '+selected.kind+(completed(selected)?' completed':'')}>{label(selected)}</p>
+        <dl className="plan-details">
+          {selected.segment&&<><dt>原計畫</dt><dd>{selected.original_start} 開始，共 {selected.original_minutes} 分鐘；以下為目前點選時段。</dd></>}
+          <dt>日期</dt><dd>{selected.date}</dd><dt>起始時間</dt><dd>{planStart(selected)}</dd>
+          <dt>結束時間</dt><dd>{(()=>{const end=timeMinutes(planStart(selected))+Number(selected.minutes);return `${String(Math.floor(end/60)).padStart(2,'0')}:${String(end%60).padStart(2,'0')}`})()}</dd>
+          <dt>{selected.kind==='study'?'讀書時數':'佔用時數'}</dt><dd>{selected.minutes} 分鐘（{(selected.minutes/60).toFixed(2)} 小時）</dd>
+          <dt>{selected.kind==='study'?'讀書計畫':'事項說明'}</dt><dd><pre>{selected.content||'尚未填寫內容'}</pre></dd>
+        </dl>
+        {selected.kind==='study'&&<>
+          {onComplete&&<div className="completion-control">
+            <label><input type="checkbox" checked={completed(selected)} disabled={saving} onChange={e=>changeCompletion(e.target.checked)}/>已完成這項讀書計畫</label>
+            {selected.segment&&<small>完成標記會套用至此原計畫的所有分段。</small>}
+            <small>完成標記不會自動新增學習紀錄。</small>
+            {saving&&<p role="status">正在儲存完成狀態…</p>}
+            {error&&<p className="error" role="alert">{error}</p>}
+          </div>}
+          <button disabled={saving} onClick={()=>{onStart(selected);select(null)}}>開始倒計時</button>
+        </>}
+      </section>
+    </div>}
+  </>;
+}
 export function StudyClock({rows,userId,controller}){const key=`learnpilot-timer-${userId}`;const [timer,setTimer]=useState(()=>{try{return JSON.parse(localStorage.getItem(key))}catch{return null}}),[now,setNow]=useState(Date.now()),[enabled,setEnabled]=useState(false),[alarm,setAlarm]=useState('');const audio=useRef(null),seen=useRef(new Set());
 function ring(text){setAlarm(text);if(enabled&&audio.current){const ctx=audio.current;ctx.resume();for(let i=0;i<3;i++){let o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.frequency.value=880;g.gain.value=.15;o.start(ctx.currentTime+i*.4);o.stop(ctx.currentTime+i*.4+.2)}}if(enabled&&window.Notification?.permission==='granted')new Notification('LearnPilot 學習提醒',{body:text})}
 controller.current=r=>{if(!(r.minutes>0))return;setTimer({label:r.subject,end:Date.now()+r.minutes*60000,left:r.minutes*60000,running:true})};

@@ -225,6 +225,13 @@ def serialize_editable_plan(rows, notes, daily_starts=None, availability_windows
             raise ValueError(f"第 {i} 列：固定項目不可超過午夜。")
         if cleaned[-1]["kind"] not in ("study", "blocked", "todo"):
             raise ValueError("無效的項目類型。")
+        completed = row.get('completed', False)
+        if not isinstance(completed, bool):
+            raise ValueError("完成狀態須為布林值。")
+        if completed and cleaned[-1]['kind'] != 'study':
+            raise ValueError("只有讀書計畫可標記完成。")
+        if 'completed' in row:
+            cleaned[-1]['completed'] = completed
     cleaned = fit_calendar_slots(cleaned, daily_starts, availability_windows)
     for i, a in enumerate(cleaned):
         for b in cleaned[:i]:
