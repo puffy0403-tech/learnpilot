@@ -7,6 +7,8 @@ erDiagram
     users ||--o{ plans : owns
     users ||--o{ study_logs : records
     plans ||--o{ plan_items : contains
+    users ||--o{ plan_chat_snapshots : generates
+    plan_chat_snapshots o|--o{ plans : original_conversation
     plan_items o|--o| study_logs : auto_log
 
     users {
@@ -18,6 +20,7 @@ erDiagram
         INTEGER user_id FK
         TEXT week_start
         TEXT content "相容文字與匯出快照"
+        TEXT chat_snapshot_id FK "原始對話快照，可空"
     }
     plan_items {
         INTEGER id PK
@@ -31,6 +34,16 @@ erDiagram
         TEXT content
         TEXT completed_at "未完成時為 NULL"
         TEXT legacy_key "舊完成關聯識別碼，可空"
+    }
+    plan_chat_snapshots {
+        TEXT id PK
+        INTEGER user_id FK
+        TEXT week_start
+        INTEGER revision
+        TEXT messages "產生當時對話 JSON"
+        TEXT summary
+        TEXT source "AI 服務與模型來源"
+        TEXT generated_at
     }
     study_logs {
         INTEGER id PK
@@ -58,3 +71,10 @@ erDiagram
 搬移成功記錄於 `schema_migrations`，重複啟動不會重複搬移。格式不符或關聯歸屬不一致時會回復本次變更並停止啟動，錯誤中會提供備份位置；請保留原資料排查，不要刪除資料庫。舊資料只有完成布林值，無法還原真實完成時刻，因此這類項目的 `completed_at` 以搬移時間補齊。沒有原本自動紀錄的已完成項目不會在搬移中憑空產生學習時數。
 
 更新需同步套用前後端檔案並停止所有舊後端，再啟動新版。若需要整份回復，先停止全部服務，以搬移前備份搭配前一版程式還原；請勿讓新舊後端同時寫入同一資料庫。
+
+
+## 計畫原始對話快照
+
+AI 產生草稿成功時，伺服器將當時的對話複製到 `plan_chat_snapshots`；儲存計畫時以 `plans.chat_snapshot_id` 關聯。此關聯建立後不可替換或清空，編輯計畫或勾選完成仍保留。每次產生草稿有獨立快照，後續對話或清除 `planning_chats` 不會改變已儲存的來源。前端匯入新 AI 草稿會建立新計畫，避免將舊計畫來源改成新對話。
+
+快照可被同一份草稿另存的多份計畫引用；手動與舊版計畫可無快照。所有新增關聯與讀取都檢查使用者歸屬，不提供修改快照的 API。既有資料只增加可空欄位，無法回溯確定原始來源的舊計畫不會自動配對現有聊天。

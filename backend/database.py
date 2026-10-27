@@ -31,6 +31,18 @@ def initialize():
         CREATE INDEX IF NOT EXISTS plans_owner ON plans(user_id);
         ''')
         ensure_schema(c, DB_PATH)
+        c.execute('BEGIN IMMEDIATE')
+        c.execute('''CREATE TABLE IF NOT EXISTS plan_chat_snapshots(
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            week_start TEXT NOT NULL,
+            revision INTEGER NOT NULL,
+            messages TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            source TEXT NOT NULL,
+            generated_at TEXT NOT NULL)''')
+        if 'chat_snapshot_id' not in {row[1] for row in c.execute('PRAGMA table_info(plans)')}:
+            c.execute('ALTER TABLE plans ADD COLUMN chat_snapshot_id TEXT REFERENCES plan_chat_snapshots(id)')
         count = c.execute('SELECT count(*) FROM users').fetchone()[0]
     logging.getLogger('uvicorn.error.storage').info('DATA_LOCATION: %s | 帳號數：%s', DB_PATH.resolve(), count)
 
@@ -67,6 +79,7 @@ class Plan(Payload):
     week_start: date
     content: str = Field(min_length=1,max_length=500000)
     selected_at: datetime | None = None
+    chat_snapshot_id: str | None = Field(default=None, pattern=r'^[0-9a-f]{32}$')
 MODELS={'goals':Goal,'study_logs':Log,'plans':Plan}
 
 def add_routes(app):
@@ -122,10 +135,15 @@ def add_routes(app):
     def validate(table,p):
         try: return MODELS[table].model_validate(p).model_dump(mode='json')
         except ValidationError: raise HTTPException(422,'輸入資料有誤，請檢查日期、科目與數值')
+    def validate_snapshot(c, snapshot_id, user_id):
+        if snapshot_id and not c.execute('SELECT 1 FROM plan_chat_snapshots WHERE id=? AND user_id=?', (snapshot_id, user_id)).fetchone():
+            raise HTTPException(404, '原始對話快照不存在')
     @app.post('/data/{table}')
     def insert(table:str,p:dict,user=Depends(current_user)):
         table_check(table); values=validate(table,p); values['user_id']=user['id']
         with connect() as c:
+            if table == 'plans':
+                validate_snapshot(c, values['chat_snapshot_id'], user['id'])
             cur=c.execute(f"INSERT INTO {table} ({','.join(values)}) VALUES ({','.join('?' for _ in values)})",list(values.values()))
             row = dict(c.execute(f'SELECT * FROM {table} WHERE id=?',(cur.lastrowid,)).fetchone())
             if table == 'plans':
@@ -143,6 +161,10 @@ def add_routes(app):
             if original is not None and (table!='plans' or row['content']!=original): raise HTTPException(409,'資料已變更，請重新載入')
             if set(p)-set(MODELS[table].model_fields): raise HTTPException(422,'未知欄位')
             merged={k:row[k] for k in MODELS[table].model_fields}; merged.update(p); values=validate(table,merged)
+            if table == 'plans':
+                if row['chat_snapshot_id'] and values['chat_snapshot_id'] != row['chat_snapshot_id']:
+                    raise HTTPException(409, '此計畫的原始對話已保留，若要使用另一份對話請另存新計畫。')
+                validate_snapshot(c, values['chat_snapshot_id'], user['id'])
             c.execute(f"UPDATE {table} SET {','.join(k+'=?' for k in values)} WHERE id=? AND user_id=?",[*values.values(),record_id,user['id']])
             updated = dict(c.execute(f'SELECT * FROM {table} WHERE id=?',(record_id,)).fetchone())
             if table == 'plans' and (values['content'] != row['content'] or values['week_start'] != row['week_start']):

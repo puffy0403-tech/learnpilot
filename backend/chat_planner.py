@@ -2,6 +2,8 @@
 import json
 import math
 import re
+import uuid
+from datetime import datetime, timezone
 from datetime import date, timedelta
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
@@ -268,6 +270,34 @@ async def chat_generate(p: Context, user=Depends(current_user)):
     if state(user['id'],p.week_start)['revision'] != p.revision:
         raise HTTPException(409,'產生期間對話已更新，請重新產生草稿。')
     try:
-        return {**make_plan(draft,p),'source':source,'week_start':str(p.week_start),'revision':p.revision}
+        result = make_plan(draft, p)
+        snapshot_id = uuid.uuid4().hex
+        with connect() as c:
+            c.execute('BEGIN IMMEDIATE')
+            latest = c.execute('SELECT revision FROM planning_chats WHERE user_id=? AND week_start=?', (user['id'], str(p.week_start))).fetchone()
+            if not latest or latest['revision'] != p.revision:
+                raise HTTPException(409, '產生期間對話已更新，請重新產生草稿。')
+            c.execute('INSERT INTO plan_chat_snapshots VALUES(?,?,?,?,?,?,?,?)', (
+                snapshot_id, user['id'], str(p.week_start), p.revision,
+                json.dumps(original['messages'], ensure_ascii=False), original['summary'], source,
+                datetime.now(timezone.utc).isoformat()))
+        return {**result,'source':source,'week_start':str(p.week_start),'revision':p.revision,'chat_snapshot_id':snapshot_id}
     except (ValueError,KeyError,TypeError) as exc:
         raise HTTPException(422,str(exc)) from None
+
+
+@router.get('/plans/{plan_id}/conversation')
+def plan_conversation(plan_id: int, user=Depends(current_user)):
+    with connect() as c:
+        plan = c.execute('SELECT chat_snapshot_id FROM plans WHERE id=? AND user_id=?', (plan_id, user['id'])).fetchone()
+        if not plan:
+            raise HTTPException(404, '計畫不存在')
+        if not plan['chat_snapshot_id']:
+            return {'snapshot': None, 'message': '此計畫沒有保存原始 AI 對話；舊計畫或手動計畫不會自動配對目前對話。'}
+        row = c.execute('SELECT * FROM plan_chat_snapshots WHERE id=? AND user_id=?', (plan['chat_snapshot_id'], user['id'])).fetchone()
+        if not row:
+            raise HTTPException(404, '原始對話快照不存在')
+        snapshot = dict(row)
+        snapshot.pop('user_id')
+        snapshot['messages'] = json.loads(snapshot['messages'])
+        return {'snapshot': snapshot}

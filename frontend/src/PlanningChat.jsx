@@ -64,7 +64,7 @@ export default function PlanningChat({request,userId,start,setStart,fixed,setFix
     <details><summary>對話確認的可用時段與固定事項</summary>{draft.availability_windows.map((w,i)=><p key={i}>{w.date} {w.start_time}–{w.end_time}</p>)}{draft.fixed_items.map((r,i)=><p key={i}>{r.kind==='blocked'?'保留空白':'固定待辦'}：{r.date} {r.start_time} · {r.minutes} 分鐘 · {r.content||r.subject}</p>)}</details>
     {draft.unplaced.length>0&&<div className="error" role="alert">可用時間不足，尚未安排：{draft.unplaced.map(r=>`${r.subject} ${r.minutes} 分鐘`).join('、')}。可以回到對話調整目標或增加可用時間。</div>}
     <DailyPlan rows={draft.items.filter(r=>r.kind==='study')}/>
-    <button disabled={!!pending||!draft.items.some(r=>r.kind==='study')} onClick={()=>onImport(draft)}>匯入目前計畫編輯區</button><p><small>匯入後可修改科目與內容，最後按「儲存計畫並查看日曆」。</small></p>
+    <button disabled={!!pending||!draft.items.some(r=>r.kind==='study')} onClick={()=>onImport(draft)}>匯入目前計畫編輯區</button><p><small>匯入後可修改科目與內容，最後按「儲存計畫並查看日曆」。每份計畫會保留產生當時的原始 AI 對話，匯入新草稿將另存為新計畫。</small></p>
   </section>}
  </>;
 }
