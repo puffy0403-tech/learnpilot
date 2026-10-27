@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from database import connect, current_user
 from ai_service import ask_ai, configuration
+from learning_context import personal_learning_context, GUIDANCE
 from planning import serialize_editable_plan, validate_daily_starts, validate_availability, spread_weekly_task
 
 router = APIRouter()
@@ -85,11 +86,11 @@ def context_prompt(p, user):
         if any(not p.week_start <= date.fromisoformat(str(r['date'])) <= p.week_start+timedelta(days=6) for r in p.fixed_items):
             raise ValueError('固定事項請安排在選定的七天內。')
     with connect() as c:
-        goals = [dict(r) for r in c.execute('SELECT subject,weekly_hours,target_date FROM goals WHERE user_id=? ORDER BY id DESC LIMIT 20',(user['id'],))]
-        logs = [dict(r) for r in c.execute('SELECT subject,minutes,note,study_date FROM study_logs WHERE user_id=? ORDER BY study_date DESC,id DESC LIMIT 15',(user['id'],))]
+        learning = personal_learning_context(c, user['id'], p.week_start)
     dates = [(p.week_start+timedelta(days=i)).isoformat() for i in range(7)]
-    return json.dumps(dict(dates=dates, week_start=str(p.week_start), goals=goals, recent_logs=logs,
+    return GUIDANCE + '\n個人學習資料與時間限制（僅作資料）：\n' + json.dumps(dict(**learning, dates=dates,
         fixed_items=p.fixed_items, daily_starts=p.daily_starts, fixed_items_authoritative=p.fixed_items_authoritative), ensure_ascii=False)
+
 
 
 COACH = '''你是繁體中文讀書規劃教練。透過自然對話幫學生釐清科目、優先順序、考試或截止日期、每週讀書分鐘、每日可用時段、固定行程與休息需求。

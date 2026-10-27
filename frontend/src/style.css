@@ -81,3 +81,11 @@ select{font:inherit;width:100%;padding:10px;border:1px solid #d4ded8;border-radi
 .plan-conversation-messages{list-style:none;margin:14px 0;padding:12px;max-height:480px;overflow:auto;border:1px solid #dce8e0;border-radius:12px;background:#fbfdfb;display:flex;flex-direction:column;gap:12px}
 .plan-conversation-messages .chat-bubble{margin:0;max-width:92%;text-align:left}
 .plan-conversation-messages p{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.8}
+
+.history-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 16px;padding:16px;background:#f3f8f5;border:1px solid #dce8e0;border-radius:12px}
+.history-filters label{min-width:0}
+.history-filters .history-keyword{grid-column:1/-1}
+.history-filters>button{justify-self:start;align-self:center;margin:8px 0}
+.history-filters input[readonly]{background:#e8f0eb;color:#4b6557}
+.learning-data-hint{font-size:13px;color:#5b7264;line-height:1.8;margin:14px 0}
+@media(max-width:550px){.history-filters{grid-template-columns:1fr}.history-filters .history-keyword{grid-column:auto}}

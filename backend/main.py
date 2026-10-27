@@ -1,4 +1,5 @@
 import os
+import json
 from datetime import date
 import pandas as pd
 from dotenv import load_dotenv
@@ -6,6 +7,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from plan_items import item_rows, decode_plan, timestamp
+from learning_context import personal_learning_context, GUIDANCE
 from planning import build_rule_based_plan, editable_plan_data, serialize_editable_plan, schedule_available, ensure_study_content, fit_calendar_slots, plan_daily_starts, plan_availability
 
 load_dotenv()
@@ -128,6 +130,7 @@ async def generate(p: PlanRequest, user=Depends(current_user)):
     with connect() as c:
         goals = pd.DataFrame([dict(r) for r in c.execute('SELECT * FROM goals WHERE user_id=? ORDER BY id DESC',(user['id'],))], columns=["subject", "weekly_hours", "target_score", "target_date"])
         logs = pd.DataFrame([dict(r) for r in c.execute('SELECT * FROM study_logs WHERE user_id=? ORDER BY id DESC',(user['id'],))], columns=["study_date", "subject", "minutes", "note"])
+        learning = personal_learning_context(c, user['id'], p.week_start)
     if goals.empty:
         raise HTTPException(422, "請先設定至少一個學習目標")
     try:
@@ -138,8 +141,8 @@ async def generate(p: PlanRequest, user=Depends(current_user)):
     from ai_service import configuration, ask_ai
     if configuration()['configured']:
         try:
-            prompt = f"以繁體中文規劃下一週，分析完成狀況與調整建議。每個時段必須包含具體主題、練習與檢核方式；不要杜撰教材章節。每個排程獨立一行：- 週一：科目｜1.0 小時｜任務。目標：{goals.to_json(force_ascii=False)}；紀錄：{logs.to_json(force_ascii=False)}。只建議學習任務，不含固定事項。"
-            content, source = await ask_ai('你是讀書計畫教練。', [{'role':'user','content':prompt}])
+            prompt = f"以繁體中文規劃下一週，分析完成狀況與調整建議。每個時段必須包含具體主題、練習與檢核方式；不要杜撰教材章節。每個排程獨立一行：- 週一：科目｜1.0 小時｜任務。個人學習資料：{json.dumps(learning, ensure_ascii=False)}。只建議學習任務，不含固定事項。"
+            content, source = await ask_ai('你是讀書計畫教練。'+GUIDANCE, [{'role':'user','content':prompt}])
         except HTTPException as exc:
             warning = str(exc.detail) + ' 已改用規則式規劃。'
     try:
@@ -155,3 +158,25 @@ async def generate(p: PlanRequest, user=Depends(current_user)):
     if unplaced:
         warning = (warning or "") + f" 可用時間不足，尚有 {unplaced:g} 分鐘未安排。"
     return {"content": content, "items": rows, "notes": notes, "source": source, "warning": warning}
+
+
+@app.get('/users/{user_id}/study-logs')
+def user_study_logs(user_id: int, subject: str = '', from_date: date | None = None, to_date: date | None = None, q: str = '', user=Depends(current_user)):
+    if user_id != user['id']:
+        raise HTTPException(403, '只能查詢目前登入帳號的學習紀錄。')
+    if from_date and to_date and from_date > to_date:
+        raise HTTPException(422, '起始日期不可晚於結束日期。')
+    clauses, params = ['user_id=?'], [user['id']]
+    if subject.strip():
+        clauses.append('subject=?'); params.append(subject.strip())
+    if from_date:
+        clauses.append('study_date>=?'); params.append(str(from_date))
+    if to_date:
+        clauses.append('study_date<=?'); params.append(str(to_date))
+    if q.strip():
+        term = q.strip().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        clauses.append("(subject LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\')")
+        params.extend(['%'+term+'%', '%'+term+'%'])
+    with connect() as c:
+        items = [dict(row) for row in c.execute('SELECT * FROM study_logs WHERE '+ ' AND '.join(clauses)+' ORDER BY study_date DESC,id DESC', params)]
+    return {'user_id': user['id'], 'items': items}
