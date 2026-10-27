@@ -1,11 +1,11 @@
 import os
-import uuid
 from datetime import date
 import pandas as pd
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
+from plan_items import item_rows, decode_plan, timestamp
 from planning import build_rule_based_plan, editable_plan_data, serialize_editable_plan, schedule_available, ensure_study_content, fit_calendar_slots, plan_daily_starts, plan_availability
 
 load_dotenv()
@@ -38,6 +38,59 @@ app.include_router(password_reset_router)
 def health():
     return {"ok": True}
 
+@app.get('/plans/{plan_id}/items')
+def read_plan_items(plan_id: int, user=Depends(current_user)):
+    with connect() as c:
+        plan = c.execute('SELECT * FROM plans WHERE id=? AND user_id=?', (plan_id, user['id'])).fetchone()
+        if not plan:
+            raise HTTPException(404, '計畫不存在')
+        _, notes, starts, windows = decode_plan(plan)
+        return {'items': item_rows(c, plan_id), 'notes': notes, 'daily_starts': starts, 'availability_windows': windows}
+
+
+def save_item_completion(c, plan, item_id, p, user):
+    if plan['content'] != p.original_content:
+        raise HTTPException(409, '計畫已變更，請重新整理後再勾選。')
+    item = c.execute('SELECT * FROM plan_items WHERE id=? AND plan_id=?', (item_id, plan['id'])).fetchone()
+    if not item:
+        raise HTTPException(404, '讀書項目不存在')
+    if item['kind'] != 'study':
+        raise HTTPException(422, '只有讀書計畫可標記完成。')
+    log = c.execute('SELECT id FROM study_logs WHERE plan_item_id=? AND user_id=?', (item_id, user['id'])).fetchone()
+    if p.completed and not log:
+        minutes = float(item['planned_minutes'])
+        if not minutes.is_integer():
+            raise HTTPException(422, '學習紀錄須為整數分鐘，請先調整此計畫時數。')
+        c.execute('INSERT INTO study_logs(user_id,study_date,subject,minutes,note,plan_item_id) VALUES(?,?,?,?,?,?)',
+            (user['id'], item['scheduled_date'], item['subject'], int(minutes),
+             ('讀書計畫完成自動紀錄：' + item['content'])[:20000], item_id))
+    elif not p.completed and log:
+        c.execute('DELETE FROM study_logs WHERE id=? AND user_id=?', (log['id'], user['id']))
+    completed_at = (item['completed_at'] or timestamp()) if p.completed else None
+    c.execute('UPDATE plan_items SET completed_at=? WHERE id=?', (completed_at, item_id))
+    rows = item_rows(c, plan['id'])
+    try:
+        _, notes, starts, windows = decode_plan(plan)
+        _, content = serialize_editable_plan(rows, notes, starts, windows)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    c.execute('UPDATE plans SET content=? WHERE id=?', (content, plan['id']))
+    updated = dict(c.execute('SELECT * FROM plans WHERE id=?', (plan['id'],)).fetchone())
+    logs = [dict(row) for row in c.execute('SELECT * FROM study_logs WHERE user_id=? ORDER BY id DESC', (user['id'],))]
+    return {'plan': updated, 'items': rows, 'study_logs': logs}
+
+
+@app.patch('/plan-items/{item_id}/completion')
+def complete_item_by_id(item_id: int, p: CompletionRequest, user=Depends(current_user)):
+    with connect() as c:
+        c.execute('BEGIN IMMEDIATE')
+        plan = c.execute('SELECT p.* FROM plans p JOIN plan_items i ON i.plan_id=p.id WHERE i.id=? AND p.user_id=?', (item_id, user['id'])).fetchone()
+        if not plan:
+            raise HTTPException(404, '讀書項目不存在')
+        return save_item_completion(c, plan, item_id, p, user)
+
+
+# Retain the old positional route while existing local frontends are updated.
 @app.patch('/plans/{plan_id}/items/{item_index}/completion')
 def complete_item(plan_id: int, item_index: int, p: CompletionRequest, user=Depends(current_user)):
     with connect() as c:
@@ -47,38 +100,10 @@ def complete_item(plan_id: int, item_index: int, p: CompletionRequest, user=Depe
             raise HTTPException(404, '計畫不存在')
         if plan['content'] != p.original_content:
             raise HTTPException(409, '計畫已變更，請重新整理後再勾選。')
-        try:
-            rows, notes = editable_plan_data(plan['content'], date.fromisoformat(plan['week_start']))
-            starts = plan_daily_starts(plan['content'])
-            windows = plan_availability(plan['content'])
-            rows = fit_calendar_slots(rows, starts, windows)
-            if not 0 <= item_index < len(rows):
-                raise HTTPException(404, '讀書項目不存在')
-            if rows[item_index].get('kind', 'study') != 'study':
-                raise HTTPException(422, '只有讀書計畫可標記完成。')
-            item = rows[item_index]
-            item['completion_key'] = item.get('completion_key') or uuid.uuid4().hex
-            item['completed'] = p.completed
-            _, content = serialize_editable_plan(rows, notes, starts, windows)
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from None
-        link = c.execute('SELECT log_id FROM plan_completion_logs WHERE plan_id=? AND item_key=?', (plan_id, item['completion_key'])).fetchone()
-        if p.completed:
-            if not link or link['log_id'] is None:
-                minutes = float(item['minutes'])
-                if not minutes.is_integer():
-                    raise HTTPException(422, '學習紀錄須為整數分鐘，請先調整此計畫時數。')
-                log = c.execute('INSERT INTO study_logs(user_id,study_date,subject,minutes,note) VALUES(?,?,?,?,?)',
-                    (user['id'], str(item['date'])[:10], item['subject'], int(minutes), '讀書計畫完成自動紀錄：' + str(item.get('content', ''))))
-                c.execute('INSERT INTO plan_completion_logs(plan_id,item_key,log_id) VALUES(?,?,?) ON CONFLICT(plan_id,item_key) DO UPDATE SET log_id=excluded.log_id',
-                    (plan_id, item['completion_key'], log.lastrowid))
-        elif link:
-            c.execute('DELETE FROM study_logs WHERE id=? AND user_id=?', (link['log_id'], user['id']))
-            c.execute('DELETE FROM plan_completion_logs WHERE plan_id=? AND item_key=?', (plan_id, item['completion_key']))
-        c.execute('UPDATE plans SET content=? WHERE id=? AND user_id=?', (content, plan_id, user['id']))
-        updated = dict(c.execute('SELECT * FROM plans WHERE id=?', (plan_id,)).fetchone())
-        logs = [dict(row) for row in c.execute('SELECT * FROM study_logs WHERE user_id=? ORDER BY id DESC', (user['id'],))]
-    return {'plan': updated, 'items': rows, 'study_logs': logs}
+        item = c.execute('SELECT id FROM plan_items WHERE plan_id=? AND position=?', (plan_id, item_index)).fetchone()
+        if not item:
+            raise HTTPException(404, '讀書項目不存在')
+        return save_item_completion(c, plan, item['id'], p, user)
 
 @app.post("/plans/parse")
 async def parse(p: PlanRequest, user=Depends(current_user)):

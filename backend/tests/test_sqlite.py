@@ -45,7 +45,7 @@ class SQLiteTests(unittest.TestCase):
         row=self.a.post('/data/plans',json=p).json()
         parsed=self.a.post('/plans/parse',json=p); self.assertEqual(parsed.status_code,200)
         self.assertTrue(parsed.json()['items'])
-        self.assertEqual(self.a.patch(f"/data/plans/{row['id']}",json={'content':p['content']+'x','original_content':p['content']}).status_code,200)
+        self.assertEqual(self.a.patch(f"/data/plans/{row['id']}",json={'content':p['content'].replace('### 學習計畫','### 更新計畫',1),'original_content':p['content']}).status_code,200)
         self.assertEqual(self.a.patch(f"/data/plans/{row['id']}",json={'content':'overwrite','original_content':p['content']}).status_code,409)
         self.assertEqual(self.a.patch(f"/data/plans/{row['id']}",json={'selected_at':'2026-10-09T08:00:00Z'}).status_code,200)
         database.initialize()

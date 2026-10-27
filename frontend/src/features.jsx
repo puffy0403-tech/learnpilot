@@ -12,7 +12,7 @@ export function Calendar({rows,start,onStart,onComplete}) {
     const parts=[];
     for(let slot=Math.floor(beginAt/120);slot<12&&slot*120<Math.max(beginAt+1,end);slot++){
       const begin=Math.max(beginAt,slot*120),finish=Math.min(end,(slot+1)*120);
-      parts.push({...r,kind:itemKind(r),itemIndex,key:`${itemIndex}/${slot}`,
+      parts.push({...r,kind:itemKind(r),itemIndex,key:`${r.plan_item_id||'legacy-'+itemIndex}/${slot}`,
         start_time:`${String(Math.floor(begin/60)).padStart(2,'0')}:${String(begin%60).padStart(2,'0')}`,
         minutes:Math.max(0,finish-begin),original_start:planStart(r),original_minutes:duration,
         segment:duration>120||end>(Math.floor(beginAt/120)+1)*120});

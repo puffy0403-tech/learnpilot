@@ -1,0 +1,60 @@
+# 計畫項目與學習紀錄 ERD
+
+本文件描述已實作的關聯；科目獨立資料表與逐筆 AI 訊息表仍屬於後續設計，這次沒有搬移。
+
+```mermaid
+erDiagram
+    users ||--o{ plans : owns
+    users ||--o{ study_logs : records
+    plans ||--o{ plan_items : contains
+    plan_items o|--o| study_logs : auto_log
+
+    users {
+        INTEGER id PK
+        TEXT email UK
+    }
+    plans {
+        INTEGER id PK
+        INTEGER user_id FK
+        TEXT week_start
+        TEXT content "相容文字與匯出快照"
+    }
+    plan_items {
+        INTEGER id PK
+        INTEGER plan_id FK
+        INTEGER position "同一計畫內唯一"
+        TEXT kind "study、todo、blocked"
+        TEXT subject
+        TEXT scheduled_date
+        TEXT start_time
+        REAL planned_minutes
+        TEXT content
+        TEXT completed_at "未完成時為 NULL"
+        TEXT legacy_key "舊完成關聯識別碼，可空"
+    }
+    study_logs {
+        INTEGER id PK
+        INTEGER user_id FK
+        INTEGER plan_item_id FK,UK "手動或已刪除項目的紀錄可空"
+        TEXT study_date
+        TEXT subject
+        INTEGER minutes
+        TEXT note
+    }
+```
+
+- `plan_items.id` 為固定編號，排序、時段與內容調整時可保留識別。
+- `study_logs.plan_item_id` 是可空外鍵，非空時有唯一索引；一個項目最多一筆自動學習紀錄。
+- 取消完成會撤銷該項目的自動紀錄；刪除計畫或項目則保留歷史學習紀錄，外鍵設為 NULL。
+- 已完成項目的內容修改不會改寫過去學習紀錄。學習紀錄仍可單獨修改。
+- 已儲存計畫由 `GET /plans/{plan_id}/items` 讀取項目，完成使用 `PATCH /plan-items/{item_id}/completion`。
+- 舊按位置勾選 API 保留相容；舊 `plan_completion_logs` 表保留供搬移與舊資料稽核，新功能不再寫入該表。
+- 原始文字、分析與時間限制仍保留在 `plans.content`，用於相容與匯出；計畫新增或編輯時，於同一交易內同步獨立項目，完成狀態則由 `plan_items.completed_at` 保存。
+
+## 舊資料搬移
+
+首次啟動時，若已有使用者，會先以 SQLite backup 建立 `資料庫所在資料夾/backups/learnpilot-before-plan-items-日期時間.db` 並檢查備份。之後於同一交易內建立新表、加上外鍵與唯一索引、搬移現有排程，並將舊自動紀錄連到對應項目。原有帳號、密碼雜湊、計畫文字及紀錄不會重新建立或清除；手動紀錄維持 NULL 關聯。找不到現存項目的歷史紀錄不會被強行配對。
+
+搬移成功記錄於 `schema_migrations`，重複啟動不會重複搬移。格式不符或關聯歸屬不一致時會回復本次變更並停止啟動，錯誤中會提供備份位置；請保留原資料排查，不要刪除資料庫。舊資料只有完成布林值，無法還原真實完成時刻，因此這類項目的 `completed_at` 以搬移時間補齊。沒有原本自動紀錄的已完成項目不會在搬移中憑空產生學習時數。
+
+更新需同步套用前後端檔案並停止所有舊後端，再啟動新版。若需要整份回復，先停止全部服務，以搬移前備份搭配前一版程式還原；請勿讓新舊後端同時寫入同一資料庫。

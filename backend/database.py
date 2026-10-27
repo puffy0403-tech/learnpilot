@@ -4,6 +4,7 @@ from fastapi import HTTPException, Request, Depends
 from pydantic import BaseModel, Field, ConfigDict
 from datetime import date, datetime
 from local_storage import default_database_path
+from plan_items import ensure_schema, sync_plan_items
 
 DB_PATH = Path(os.getenv('DATABASE_PATH') or default_database_path(Path(__file__).parent))
 def connect():
@@ -29,6 +30,7 @@ def initialize():
         CREATE INDEX IF NOT EXISTS logs_owner ON study_logs(user_id);
         CREATE INDEX IF NOT EXISTS plans_owner ON plans(user_id);
         ''')
+        ensure_schema(c, DB_PATH)
         count = c.execute('SELECT count(*) FROM users').fetchone()[0]
     logging.getLogger('uvicorn.error.storage').info('DATA_LOCATION: %s | 帳號數：%s', DB_PATH.resolve(), count)
 
@@ -125,11 +127,16 @@ def add_routes(app):
         table_check(table); values=validate(table,p); values['user_id']=user['id']
         with connect() as c:
             cur=c.execute(f"INSERT INTO {table} ({','.join(values)}) VALUES ({','.join('?' for _ in values)})",list(values.values()))
-            return dict(c.execute(f'SELECT * FROM {table} WHERE id=?',(cur.lastrowid,)).fetchone())
+            row = dict(c.execute(f'SELECT * FROM {table} WHERE id=?',(cur.lastrowid,)).fetchone())
+            if table == 'plans':
+                try: sync_plan_items(c, row)
+                except ValueError as exc: raise HTTPException(422, str(exc)) from None
+            return row
     @app.patch('/data/{table}/{record_id}')
     def update(table:str,record_id:int,p:dict,user=Depends(current_user)):
         table_check(table)
         with connect() as c:
+            c.execute('BEGIN IMMEDIATE')
             row=c.execute(f'SELECT * FROM {table} WHERE id=? AND user_id=?',(record_id,user['id'])).fetchone()
             if not row: raise HTTPException(404,'資料不存在')
             original=p.pop('original_content',None)
@@ -137,7 +144,11 @@ def add_routes(app):
             if set(p)-set(MODELS[table].model_fields): raise HTTPException(422,'未知欄位')
             merged={k:row[k] for k in MODELS[table].model_fields}; merged.update(p); values=validate(table,merged)
             c.execute(f"UPDATE {table} SET {','.join(k+'=?' for k in values)} WHERE id=? AND user_id=?",[*values.values(),record_id,user['id']])
-            return dict(c.execute(f'SELECT * FROM {table} WHERE id=?',(record_id,)).fetchone())
+            updated = dict(c.execute(f'SELECT * FROM {table} WHERE id=?',(record_id,)).fetchone())
+            if table == 'plans' and (values['content'] != row['content'] or values['week_start'] != row['week_start']):
+                try: sync_plan_items(c, updated)
+                except ValueError as exc: raise HTTPException(422, str(exc)) from None
+            return updated
     @app.delete('/data/{table}/{record_id}')
     def delete(table:str,record_id:int,user=Depends(current_user)):
         table_check(table)

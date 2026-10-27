@@ -32,13 +32,15 @@ async function act(fn,success){B(true);E('');M('');try{await fn();if(success)M(s
 async function api(path,body){return request(path,body)}
 async function write(table,payload,id,original){await request('/data/'+table+(id?'/'+id:''),{...payload,...(original!==undefined?{original_content:original}:{})},id?'PATCH':'POST');await load()}
 async function remove(table,id){await request('/data/'+table+'/'+id,undefined,'DELETE');await load()}
-async function parse(p,edit=false){let r=await api('/plans/parse',{content:p.content,week_start:p.week_start});if(edit){AW(r.availability_windows??null);DS(r.daily_starts||{});W(r.items);F(r.items.filter(x=>x.kind==='blocked'||x.kind==='todo'));N(r.notes);T(p.week_start);I(p);P('AI Study Plan')}else{calendarSnapshot.current=p;C(r.items);CN(r.notes||'');CS(p.week_start)}}
+async function parse(p,edit=false){let r=p.id?await request(`/plans/${p.id}/items`,undefined,'GET'):await api('/plans/parse',{content:p.content,week_start:p.week_start});if(edit){AW(r.availability_windows??null);DS(r.daily_starts||{});W(r.items);F(r.items.filter(x=>x.kind==='blocked'||x.kind==='todo'));N(r.notes);T(p.week_start);I(p);P('AI Study Plan')}else{calendarSnapshot.current=p;C(r.items);CN(r.notes||'');CS(p.week_start)}}
 const latest=data.plans.filter(p=>p.selected_at).sort((a,b)=>b.selected_at.localeCompare(a.selected_at)||b.id-a.id)[0]||data.plans[0];
 async function completeCalendarItem(itemIndex,completed){
   if(!latest)throw new Error('請先選擇計畫');
   if(calendarSnapshot.current?.id!==latest.id||calendarSnapshot.current?.content!==latest.content)throw new Error('計畫正在更新，請稍候再勾選。');
   try{
-    const result=await request(`/plans/${latest.id}/items/${itemIndex}/completion`,{completed,original_content:latest.content},'PATCH');
+    const itemId=calendar[itemIndex]?.plan_item_id;
+    if(!itemId)throw new Error('請重新讀取計畫後再勾選。');
+    const result=await request(`/plan-items/${itemId}/completion`,{completed,original_content:latest.content},'PATCH');
     D(current=>({...current,plans:current.plans.map(p=>p.id===result.plan.id?result.plan:p),study_logs:result.study_logs}));
     calendarSnapshot.current=result.plan;C(result.items);
   }catch(error){try{await load()}catch{}throw error}
