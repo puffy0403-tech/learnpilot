@@ -98,3 +98,7 @@ erDiagram
 ```
 
 `learning_reports` 是帳號專屬的報告快照。snapshot 以 JSON 保存當時學習紀錄與最新科目目標；來源資料修改或刪除不會影響已保存報告。報告與來源紀錄、目標沒有外鍵依賴。
+
+## 固定計畫編號
+
+`plans.plan_number` 為 TEXT、唯一索引（UK），由系統配置如 `LP-000001`；原 id 主鍵與既有外鍵維持原樣。`plan_number_sequence.number` 為 INTEGER PRIMARY KEY AUTOINCREMENT，用來配置不重用的序號，沒有對外業務關聯。編輯計畫不接受修改編號。序號以資料庫為範圍共用。

@@ -89,3 +89,6 @@ select{font:inherit;width:100%;padding:10px;border:1px solid #d4ded8;border-radi
 .history-filters input[readonly]{background:#e8f0eb;color:#4b6557}
 .learning-data-hint{font-size:13px;color:#5b7264;line-height:1.8;margin:14px 0}
 @media(max-width:550px){.history-filters{grid-template-columns:1fr}.history-filters .history-keyword{grid-column:auto}}
+
+.personal-archive-group>summary{font-size:1.15rem;font-weight:700;cursor:pointer;color:#294b43;padding:8px 0;text-align:left}
+.personal-archive-group[open]>summary{margin-bottom:20px}

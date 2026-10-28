@@ -45,8 +45,18 @@ def initialize():
             generated_at TEXT NOT NULL)''')
         if 'chat_snapshot_id' not in {row[1] for row in c.execute('PRAGMA table_info(plans)')}:
             c.execute('ALTER TABLE plans ADD COLUMN chat_snapshot_id TEXT REFERENCES plan_chat_snapshots(id)')
+        c.execute('CREATE TABLE IF NOT EXISTS plan_number_sequence(number INTEGER PRIMARY KEY AUTOINCREMENT)')
+        if 'plan_number' not in {row[1] for row in c.execute('PRAGMA table_info(plans)')}:
+            c.execute('ALTER TABLE plans ADD COLUMN plan_number TEXT')
+        for row in c.execute('SELECT id FROM plans WHERE plan_number IS NULL ORDER BY id').fetchall():
+            c.execute('UPDATE plans SET plan_number=? WHERE id=?', (allocate_plan_number(c), row['id']))
+        c.execute('CREATE UNIQUE INDEX IF NOT EXISTS plans_number_unique ON plans(plan_number)')
         count = c.execute('SELECT count(*) FROM users').fetchone()[0]
     logging.getLogger('uvicorn.error.storage').info('DATA_LOCATION: %s | 帳號數：%s', DB_PATH.resolve(), count)
+
+def allocate_plan_number(c):
+    number = c.execute('INSERT INTO plan_number_sequence DEFAULT VALUES').lastrowid
+    return f'LP-{number:06d}'
 
 def user_view(row):
     return {'id':row['id'], 'email':row['email'], 'user_metadata':json.loads(row['metadata'])}
@@ -146,6 +156,7 @@ def add_routes(app):
         with connect() as c:
             if table == 'plans':
                 validate_snapshot(c, values['chat_snapshot_id'], user['id'])
+                values['plan_number'] = allocate_plan_number(c)
             cur=c.execute(f"INSERT INTO {table} ({','.join(values)}) VALUES ({','.join('?' for _ in values)})",list(values.values()))
             row = dict(c.execute(f'SELECT * FROM {table} WHERE id=?',(cur.lastrowid,)).fetchone())
             if table == 'plans':

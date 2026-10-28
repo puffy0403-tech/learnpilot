@@ -291,3 +291,9 @@ AI 規劃對話、對話產生草稿與一般「產生建議計畫」共用個�
 新增資料表 `learning_reports`：`id` PK、`user_id` FK → users、`mode`、`period_start`、`period_end`、`title`、`content`、`snapshot`（JSON）、`created_at`。使用者與學習報告為一對多。`POST /reports` 保存、`GET /reports` 列表、`GET /reports/{id}` 讀取，全部限定目前登入者。啟動時自動建立新表並保留既有資料。
 
 更新時需完整更新前後端，包含 backend/reports.py 與 frontend/src/PersonalArchive.jsx，保留原本的資料庫及 .env，停止舊服務後再執行「啟動網頁.bat」。資料保存在執行後端的 SQLite，不會上傳到 GitHub；若換電腦需連同資料庫備份移轉。
+
+### 學習計畫編號與個人資料收合
+
+每份已儲存計畫自動取得固定編號，例如 `LP-000001`。編輯與切換顯示不會更改編號，刪除後編號不重用；序號在同一資料庫內共用，不代表個人的計畫總數。啟動時依既有計畫 id 順序補編號，保留原 id、內容與關聯。plans 新增唯一 plan_number 欄位，plan_number_sequence 使用 SQLite AUTOINCREMENT 保存已配置序號。新草稿儲存後才取得編號。
+
+計畫列表、編輯標題、日曆與個人資料使用相同編號；個人資料的搜尋支援計畫編號。個人資料頁的每週學習日曆與已完成學習紀錄預設收合，點擊標題或使用鍵盤 Enter／空白鍵可展開與收合，標題顯示份數／筆數。
