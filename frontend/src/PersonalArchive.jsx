@@ -1,0 +1,20 @@
+import React,{useState} from 'react';
+import {Calendar} from './features.jsx';
+import StudyLogHistory from './StudyLogHistory.jsx';
+
+export function SavedReports({reports}){
+ const [query,Q]=useState(''),[mode,M]=useState(''),[from,F]=useState(''),[to,T]=useState('');
+ const invalid=from&&to&&from>to;
+ const found=invalid?[]:reports.filter(r=>(!mode||r.mode===mode)&&(!from||r.period_end>=from)&&(!to||r.period_start<=to)&&(!query.trim()||`${r.title}\n${r.content}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())));
+ return <section><h2>已儲存的學習報告</h2><div className="history-filters"><label>報告類型<select value={mode} onChange={e=>M(e.target.value)}><option value="">全部</option><option value="week">週報</option><option value="month">月報</option></select></label><label>起始日期<input type="date" value={from} onChange={e=>F(e.target.value)}/></label><label>結束日期<input type="date" value={to} onChange={e=>T(e.target.value)}/></label><label>搜尋報告<input type="search" value={query} onChange={e=>Q(e.target.value)} placeholder="科目、日期或報告內容"/></label><button className="ghost" onClick={()=>{Q('');M('');F('');T('')}}>清除篩選</button></div>{invalid?<p className="error" role="alert">起始日期不可晚於結束日期。</p>:<p role="status">找到 {found.length} 份報告</p>}{!invalid&&!found.length&&<p>尚無符合條件的報告；請先到學習報告頁儲存。</p>}{found.map(r=><details key={r.id}><summary>{r.title} · 儲存時間 {r.created_at}（UTC）</summary><pre>{r.content}</pre><details><summary>儲存當時的學習筆記</summary>{JSON.parse(r.snapshot).logs.map(l=><p key={l.id}>{l.study_date} · {l.subject} · {l.minutes} 分鐘：{l.note||'無筆記'}</p>)}</details><button className="ghost" onClick={()=>{const url=URL.createObjectURL(new Blob([r.content],{type:'text/plain;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=`LearnPilot-${r.mode}-${r.period_start}.txt`;a.click();URL.revokeObjectURL(url)}}>下載已儲存報告</button></details>)}</section>
+}
+function ArchiveCalendar({plan,request}){
+ const [result,R]=useState(null),[error,E]=useState(''),[busy,B]=useState(false);
+ async function load(){if(result||busy)return;B(true);E('');try{R(await request(`/plans/${plan.id}/items`,undefined,'GET'))}catch(e){E(e.message)}finally{B(false)}}
+ return <article><h3>{plan.week_start} 學習計畫 · 編號 {plan.id}</h3><button className="ghost" disabled={busy} onClick={()=>result?R(null):load()}>{busy?'載入中…':result?'收合日曆':'查看每週日曆'}</button>{error&&<p className="error" role="alert">{error}</p>}{result&&<Calendar rows={result.items} start={plan.week_start}/>}</article>
+}
+export default function PersonalArchive({user,plans,logs,reports,request}){
+ const [week,W]=useState(''),[query,Q]=useState('');
+ const found=plans.filter(p=>(!week||(week>=p.week_start&&week<=(()=>{const end=new Date(p.week_start+'T00:00:00');end.setDate(end.getDate()+6);return `${end.getFullYear()}-${String(end.getMonth()+1).padStart(2,'0')}-${String(end.getDate()).padStart(2,'0')}`})()))&&(!query.trim()||`${p.week_start}\n${p.content}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())));
+ return <><section><h2>個人的每週學習日曆</h2><div className="history-filters"><label>選擇週內日期<input type="date" value={week} onChange={e=>W(e.target.value)}/></label><label>搜尋計畫<input type="search" value={query} onChange={e=>Q(e.target.value)} placeholder="科目、日期或計畫內容"/></label><button className="ghost" onClick={()=>{W('');Q('')}}>清除篩選</button></div><p role="status">找到 {found.length} 份計畫</p>{!found.length&&<p>尚無符合條件的學習計畫。</p>}{found.map(p=><ArchiveCalendar key={`${p.id}-${p.content}`} plan={p} request={request}/>)}</section><section><h2>已完成的學習紀錄</h2><p>包含手動記錄的學習成果，以及勾選計畫完成後自動建立的紀錄。</p><StudyLogHistory user={user} logs={logs} renderLog={l=><article key={l.id}><strong>{l.study_date} · {l.subject} · {l.minutes} 分鐘</strong><p>{l.note||'無筆記'}</p></article>}/></section><SavedReports reports={reports}/></>
+}

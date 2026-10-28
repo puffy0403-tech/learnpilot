@@ -26,6 +26,8 @@ def initialize():
         CREATE TABLE IF NOT EXISTS password_resets(token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS reset_requests(bucket TEXT PRIMARY KEY, requested INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS plan_completion_logs(plan_id INTEGER NOT NULL REFERENCES plans(id) ON DELETE CASCADE, item_key TEXT NOT NULL, log_id INTEGER UNIQUE REFERENCES study_logs(id) ON DELETE SET NULL, PRIMARY KEY(plan_id,item_key));
+        CREATE TABLE IF NOT EXISTS learning_reports(id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), mode TEXT NOT NULL CHECK(mode IN ('week','month')), period_start TEXT NOT NULL, period_end TEXT NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL, snapshot TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE INDEX IF NOT EXISTS reports_owner ON learning_reports(user_id);
         CREATE INDEX IF NOT EXISTS goals_owner ON goals(user_id);
         CREATE INDEX IF NOT EXISTS logs_owner ON study_logs(user_id);
         CREATE INDEX IF NOT EXISTS plans_owner ON plans(user_id);

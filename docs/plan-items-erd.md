@@ -78,3 +78,23 @@ erDiagram
 AI 產生草稿成功時，伺服器將當時的對話複製到 `plan_chat_snapshots`；儲存計畫時以 `plans.chat_snapshot_id` 關聯。此關聯建立後不可替換或清空，編輯計畫或勾選完成仍保留。每次產生草稿有獨立快照，後續對話或清除 `planning_chats` 不會改變已儲存的來源。前端匯入新 AI 草稿會建立新計畫，避免將舊計畫來源改成新對話。
 
 快照可被同一份草稿另存的多份計畫引用；手動與舊版計畫可無快照。所有新增關聯與讀取都檢查使用者歸屬，不提供修改快照的 API。既有資料只增加可空欄位，無法回溯確定原始來源的舊計畫不會自動配對現有聊天。
+
+## 已儲存學習報告
+
+```mermaid
+erDiagram
+    users ||--o{ learning_reports : saves
+    learning_reports {
+        INTEGER id PK
+        INTEGER user_id FK
+        TEXT mode
+        TEXT period_start
+        TEXT period_end
+        TEXT title
+        TEXT content
+        TEXT snapshot
+        TEXT created_at
+    }
+```
+
+`learning_reports` 是帳號專屬的報告快照。snapshot 以 JSON 保存當時學習紀錄與最新科目目標；來源資料修改或刪除不會影響已保存報告。報告與來源紀錄、目標沒有外鍵依賴。

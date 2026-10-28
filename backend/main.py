@@ -36,6 +36,9 @@ app.include_router(chat_router)
 from password_reset import router as password_reset_router
 app.include_router(password_reset_router)
 
+from reports import router as reports_router
+app.include_router(reports_router)
+
 @app.get("/health")
 def health():
     return {"ok": True}
