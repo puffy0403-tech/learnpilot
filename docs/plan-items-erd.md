@@ -102,3 +102,5 @@ erDiagram
 ## 固定計畫編號
 
 `plans.plan_number` 為 TEXT、唯一索引（UK），由系統配置如 `LP-000001`；原 id 主鍵與既有外鍵維持原樣。`plan_number_sequence.number` 為 INTEGER PRIMARY KEY AUTOINCREMENT，用來配置不重用的序號，沒有對外業務關聯。編輯計畫不接受修改編號。序號以資料庫為範圍共用。
+
+接續原始對話時，不更動 plan_chat_snapshots 或 plans；僅複製快照至 planning_chats 的原週次工作對話。planning_chats.inherited_messages 為 INTEGER NOT NULL DEFAULT 0，用於區分歷史訊息與接續後新增的輪數，沒有新增外鍵。

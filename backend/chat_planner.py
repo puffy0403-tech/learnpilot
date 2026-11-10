@@ -9,6 +9,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from database import connect, current_user
+from plan_items import decode_plan
 from ai_service import ask_ai, configuration
 from learning_context import personal_learning_context, GUIDANCE
 from planning import serialize_editable_plan, validate_daily_starts, validate_availability, spread_weekly_task
@@ -26,6 +27,10 @@ class Context(StrictModel):
     daily_starts: dict[str, str] = Field(default_factory=dict)
     revision: int = Field(default=0, ge=0)
     fixed_items_authoritative: bool = False
+
+
+class ResumeRequest(StrictModel):
+    revision: int = Field(ge=0, strict=True)
 
 
 class ChatRequest(Context):
@@ -74,7 +79,7 @@ class Draft(StrictModel):
 def state(user_id, week_start):
     with connect() as c:
         row = c.execute('SELECT * FROM planning_chats WHERE user_id=? AND week_start=?', (user_id, str(week_start))).fetchone()
-    return dict(messages=json.loads(row['messages']), summary=row['summary'], ready=bool(row['ready']), revision=row['revision']) if row else dict(messages=[], summary='', ready=False, revision=0)
+    return dict(messages=json.loads(row['messages']), summary=row['summary'], ready=bool(row['ready']), revision=row['revision'], inherited_messages=row['inherited_messages']) if row else dict(messages=[], summary='', ready=False, revision=0, inherited_messages=0)
 
 
 def context_prompt(p, user):
@@ -223,7 +228,7 @@ def get_chat(week_start: date, user=Depends(current_user)):
 def reset_chat(p: Context, user=Depends(current_user)):
     # Keep a revision tombstone so in-flight replies cannot restore a reset chat.
     with connect() as c:
-        c.execute("INSERT INTO planning_chats(user_id,week_start,revision) VALUES(?,?,1) ON CONFLICT(user_id,week_start) DO UPDATE SET messages='[]',summary='',ready=0,revision=revision+1",(user['id'],str(p.week_start)))
+        c.execute("INSERT INTO planning_chats(user_id,week_start,revision) VALUES(?,?,1) ON CONFLICT(user_id,week_start) DO UPDATE SET messages='[]',summary='',ready=0,inherited_messages=0,revision=revision+1",(user['id'],str(p.week_start)))
     return state(user['id'],p.week_start)
 
 
@@ -232,7 +237,7 @@ async def chat_message(p: ChatRequest, user=Depends(current_user)):
     original=state(user['id'],p.week_start)
     if p.revision!=original['revision']:
         raise HTTPException(409,'對話已更新，請重新載入此週對話後再傳送。')
-    if len(original['messages'])>=60:
+    if len(original['messages'])-original['inherited_messages']>=60:
         raise HTTPException(422,'本週對話已達30輪，請產生草稿或開始新對話。')
     if not p.message.strip():
         raise HTTPException(422,'請輸入你的規劃需求。')
@@ -285,6 +290,35 @@ async def chat_generate(p: Context, user=Depends(current_user)):
         return {**result,'source':source,'week_start':str(p.week_start),'revision':p.revision,'chat_snapshot_id':snapshot_id}
     except (ValueError,KeyError,TypeError) as exc:
         raise HTTPException(422,str(exc)) from None
+
+
+@router.post('/plans/{plan_id}/conversation/resume')
+def resume_conversation(plan_id: int, p: ResumeRequest, user=Depends(current_user)):
+    with connect() as c:
+        c.execute('BEGIN IMMEDIATE')
+        plan = c.execute('SELECT * FROM plans WHERE id=? AND user_id=?', (plan_id, user['id'])).fetchone()
+        if not plan:
+            raise HTTPException(404, '計畫不存在')
+        snapshot = c.execute('SELECT * FROM plan_chat_snapshots WHERE id=? AND user_id=?', (plan['chat_snapshot_id'], user['id'])).fetchone()
+        if not snapshot:
+            raise HTTPException(422, '此計畫未保存原始 AI 對話，無法接續。')
+        week = snapshot['week_start']
+        current = c.execute('SELECT revision FROM planning_chats WHERE user_id=? AND week_start=?', (user['id'], week)).fetchone()
+        if (current['revision'] if current else 0) != p.revision:
+            raise HTTPException(409, '此週對話已更新，請重新接續並確認，避免覆蓋最新對話。')
+        try:
+            rows, _, starts, _ = decode_plan(plan)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        last = date.fromisoformat(week) + timedelta(days=6)
+        fixed = [{key: r[key] for key in ('date', 'start_time', 'minutes', 'subject', 'content', 'kind')}
+                 for r in rows if r.get('kind') in ('todo', 'blocked') and week <= str(r['date']) <= str(last)]
+        c.execute('''INSERT INTO planning_chats(user_id,week_start,messages,summary,ready,revision,inherited_messages)
+            VALUES(?,?,?,?,1,?,?) ON CONFLICT(user_id,week_start) DO UPDATE SET
+            messages=excluded.messages,summary=excluded.summary,ready=1,
+            revision=planning_chats.revision+1,inherited_messages=excluded.inherited_messages''',
+            (user['id'], week, snapshot['messages'], snapshot['summary'], p.revision+1, len(json.loads(snapshot['messages']))))
+    return {'week_start': week, 'fixed_items': fixed, 'daily_starts': starts}
 
 
 @router.get('/plans/search')

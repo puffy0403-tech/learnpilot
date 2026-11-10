@@ -161,3 +161,67 @@ def test_search_manual_plans_without_snapshot(conversations):
     plan = a.post('/data/plans', json={'week_start': WEEK, 'content': '手動建立的英文複習'}).json()
     assert a.get('/plans/search', params={'q': '手動建立'}).json()['plan_ids'] == [plan['id']]
     assert a.get(f'/plans/{plan["id"]}/conversation').json()['snapshot'] is None
+
+
+def test_resume_copies_snapshot_then_continues_into_new_plan(conversations):
+    a, b = conversations
+    draft, messages = generate(a, '原始需求：英文閱讀一小時')
+    original = save(a, draft)
+    snapshot = a.get(f'/plans/{original["id"]}/conversation').json()
+    revision = a.get('/planning-chat', params={'week_start': WEEK}).json()['revision']
+    endpoint = f'/plans/{original["id"]}/conversation/resume'
+    assert b.post(endpoint, json={'revision': revision}).status_code == 404
+    assert TestClient(app).post(endpoint, json={'revision': revision}).status_code == 401
+    resumed = a.post(endpoint, json={'revision': revision})
+    assert resumed.status_code == 200, resumed.text
+    assert resumed.json()['week_start'] == WEEK
+    current = a.get('/planning-chat', params={'week_start': WEEK}).json()
+    assert current['messages'] == messages
+    assert current['summary'] == snapshot['snapshot']['summary']
+    assert current['revision'] == revision + 1
+    assert current['inherited_messages'] == len(messages)
+    assert a.post(endpoint, json={'revision': revision}).status_code == 409
+    response = a.post('/planning-chat/message', json={'week_start': WEEK, 'revision': current['revision'], 'message': '新增需求：改練聽力'})
+    assert response.status_code == 200
+    assert response.json()['messages'][:len(messages)] == messages
+    assert response.json()['messages'][-2]['content'] == '新增需求：改練聽力'
+    next_draft = a.post('/planning-chat/generate', json={'week_start': WEEK, 'revision': response.json()['revision']})
+    assert next_draft.status_code == 200, next_draft.text
+    new_plan = save(a, next_draft.json())
+    assert new_plan['id'] != original['id']
+    assert new_plan['chat_snapshot_id'] != original['chat_snapshot_id']
+    assert a.get(f'/plans/{original["id"]}/conversation').json() == snapshot
+    assert a.get('/data/plans').json()[1] == original
+    assert a.get(f'/plans/{new_plan["id"]}/conversation').json()['snapshot']['messages'] == response.json()['messages']
+
+
+def test_resume_settings_no_snapshot_and_round_limit(conversations):
+    import json
+    a, _ = conversations
+    draft, _ = generate(a, '保留英文閱讀需求')
+    original = save(a, draft)
+    payload = a.post('/plans/serialize', json={'week_start': WEEK, 'items': [*draft['items'], {'kind': 'todo', 'date': WEEK, 'start_time': '12:00', 'minutes': 60, 'subject': '午餐', 'content': '吃飯'}], 'daily_starts': {'0': '09:00'}}).json()
+    assert a.patch(f'/data/plans/{original["id"]}', json=payload).status_code == 200
+    # Canonical saved content contains old item identities; resumed drafts must not reuse them.
+    current_plan = a.get('/data/plans').json()[0]
+    item_id = a.get(f'/plans/{original["id"]}/items').json()['items'][0]['plan_item_id']
+    assert a.patch(f'/plan-items/{item_id}/completion', json={'completed': True, 'original_content': current_plan['content']}).status_code == 200
+    # A full-length historical conversation still permits new rounds after resume.
+    with database.connect() as c:
+        messages = [{'role': 'user' if i % 2 == 0 else 'assistant', 'content': f'歷史訊息 {i}'} for i in range(60)]
+        c.execute('UPDATE plan_chat_snapshots SET messages=? WHERE id=?', (json.dumps(messages), original['chat_snapshot_id']))
+    revision = a.get('/planning-chat', params={'week_start': WEEK}).json()['revision']
+    result = a.post(f'/plans/{original["id"]}/conversation/resume', json={'revision': revision})
+    assert result.status_code == 200
+    assert result.json()['daily_starts'] == {'0': '09:00'}
+    assert result.json()['fixed_items'][0]['subject'] == '午餐'
+    assert 'plan_item_id' not in result.json()['fixed_items'][0]
+    current = a.get('/planning-chat', params={'week_start': WEEK}).json()
+    sent = a.post('/planning-chat/message', json={'week_start': WEEK, 'revision': current['revision'], 'message': '接續新需求'})
+    assert sent.status_code == 200
+    assert len(sent.json()['messages']) == 62
+    reset = a.post('/planning-chat/reset', json={'week_start': WEEK}).json()
+    assert reset['inherited_messages'] == 0
+    manual = a.post('/data/plans', json={'week_start': WEEK, 'content': '手動計畫'}).json()
+    assert a.post(f'/plans/{manual["id"]}/conversation/resume', json={'revision': reset['revision']}).status_code == 422
+    assert a.get('/planning-chat', params={'week_start': WEEK}).json() == {**reset, 'ai': a.get('/planning-chat', params={'week_start': WEEK}).json()['ai']}

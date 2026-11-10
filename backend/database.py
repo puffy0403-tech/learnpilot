@@ -51,6 +51,8 @@ def initialize():
         for row in c.execute('SELECT id FROM plans WHERE plan_number IS NULL ORDER BY id').fetchall():
             c.execute('UPDATE plans SET plan_number=? WHERE id=?', (allocate_plan_number(c), row['id']))
         c.execute('CREATE UNIQUE INDEX IF NOT EXISTS plans_number_unique ON plans(plan_number)')
+        if 'inherited_messages' not in {row[1] for row in c.execute('PRAGMA table_info(planning_chats)')}:
+            c.execute('ALTER TABLE planning_chats ADD COLUMN inherited_messages INTEGER NOT NULL DEFAULT 0')
         count = c.execute('SELECT count(*) FROM users').fetchone()[0]
     logging.getLogger('uvicorn.error.storage').info('DATA_LOCATION: %s | 帳號數：%s', DB_PATH.resolve(), count)
 

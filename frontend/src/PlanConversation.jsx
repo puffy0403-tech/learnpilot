@@ -1,6 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 
-export default function PlanConversation({planId, request}) {
+export default function PlanConversation({planId, request, onContinue, continuationBusy=false}) {
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -27,6 +27,7 @@ export default function PlanConversation({planId, request}) {
     {error && <div className="error" role="alert">{error}<button className="ghost" disabled={busy} onClick={load}>重新讀取</button></div>}
     {result && !snapshot && <p>{result.message}</p>}
     {snapshot && <>
+      {onContinue&&<button disabled={busy||continuationBusy} onClick={()=>onContinue(planId,snapshot)}>{continuationBusy?'正在接續…':'接續這段對話'}</button>}
       <p className="plan-conversation-meta">原對話週起始日：{snapshot.week_start} · 產生時間：{new Date(snapshot.generated_at).toLocaleString('zh-TW')} · {snapshot.source}</p>
       <p className="plan-conversation-description">這是產生此計畫時保存的對話；後續聊天或開始新對話不會改變此紀錄。</p>
       {snapshot.summary && <div className="plan-conversation-summary"><b>當時的需求摘要</b><p>{snapshot.summary}</p></div>}
