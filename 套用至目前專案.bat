@@ -30,7 +30,7 @@ for %%F in ("%SOURCE_DIR%\frontend\src\*.jsx" "%SOURCE_DIR%\frontend\src\*.js" "
     call :copyfile "frontend\src\%%~nxF"
     if errorlevel 1 goto failed
 )
-for %%F in (backend\requirements.txt backend\.env.example frontend\package.json frontend\package-lock.json frontend\.env.example README.md VALIDATION.md) do (
+for %%F in (backend\requirements.txt backend\.env.example frontend\package.json frontend\package-lock.json frontend\.env.example frontend\public\logo.png README.md VALIDATION.md) do (
     call :copyfile "%%F"
     if errorlevel 1 goto failed
 )

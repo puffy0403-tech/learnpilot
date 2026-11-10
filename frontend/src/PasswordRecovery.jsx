@@ -38,7 +38,7 @@ export default function PasswordRecovery({token, request, onBack, onReset}) {
   }
 
   return <main className="login">
-    <img src="/logo.png" alt="LearnPilot"/>
+    <img src="/logo.png?v=20261110" alt="LearnPilot"/>
     <h1>{resetMode ? '重設密碼' : '忘記密碼'}</h1>
     {!complete && <>
       <p>{resetMode ? '請設定至少 6 個字元的新密碼。' : '輸入註冊的 Email，我們將寄送 30 分鐘內有效的重設連結。'}</p>
