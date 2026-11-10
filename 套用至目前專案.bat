@@ -26,7 +26,7 @@ for %%F in ("%SOURCE_DIR%\backend\tests\*.py") do (
     call :copyfile "backend\tests\%%~nxF"
     if errorlevel 1 goto failed
 )
-for %%F in ("%SOURCE_DIR%\frontend\src\*.jsx" "%SOURCE_DIR%\frontend\src\*.css") do (
+for %%F in ("%SOURCE_DIR%\frontend\src\*.jsx" "%SOURCE_DIR%\frontend\src\*.js" "%SOURCE_DIR%\frontend\src\*.css") do (
     call :copyfile "frontend\src\%%~nxF"
     if errorlevel 1 goto failed
 )
