@@ -92,3 +92,10 @@ select{font:inherit;width:100%;padding:10px;border:1px solid #d4ded8;border-radi
 
 .personal-archive-group>summary{font-size:1.15rem;font-weight:700;cursor:pointer;color:#294b43;padding:8px 0;text-align:left}
 .personal-archive-group[open]>summary{margin-bottom:20px}
+
+.calendar-bulk-controls{padding:16px;margin-bottom:18px;border:1px solid #d4e5df;border-radius:12px;background:#f5faf7;text-align:left}
+.calendar-bulk-controls p{margin-bottom:0}
+.week-calendar .task.bulk-selected{outline:3px solid #2563eb;outline-offset:2px;background:#dbeafe}
+.week-calendar .task:disabled{cursor:default}
+.week-calendar .task:disabled:not(.completed){opacity:.65}
+.selection-label{font-weight:700;color:#1e40af}

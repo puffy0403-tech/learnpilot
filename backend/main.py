@@ -1,6 +1,7 @@
 import os
 import json
 from datetime import date
+from typing import Annotated
 import pandas as pd
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException
@@ -30,6 +31,11 @@ class CompletionRequest(BaseModel):
     completed: StrictBool
     original_content: str = Field(min_length=1, max_length=500000)
 
+class BulkCompletionRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    item_ids: list[Annotated[int, Field(strict=True, gt=0)]] = Field(min_length=1, max_length=1000)
+    original_content: str = Field(min_length=1, max_length=500000)
+
 add_routes(app)
 from chat_planner import router as chat_router
 app.include_router(chat_router)
@@ -53,7 +59,7 @@ def read_plan_items(plan_id: int, user=Depends(current_user)):
         return {'items': item_rows(c, plan_id), 'notes': notes, 'daily_starts': starts, 'availability_windows': windows}
 
 
-def save_item_completion(c, plan, item_id, p, user):
+def save_item_completion(c, plan, item_id, p, user, finalize=True):
     if plan['content'] != p.original_content:
         raise HTTPException(409, '計畫已變更，請重新整理後再勾選。')
     item = c.execute('SELECT * FROM plan_items WHERE id=? AND plan_id=?', (item_id, plan['id'])).fetchone()
@@ -73,6 +79,11 @@ def save_item_completion(c, plan, item_id, p, user):
         c.execute('DELETE FROM study_logs WHERE id=? AND user_id=?', (log['id'], user['id']))
     completed_at = (item['completed_at'] or timestamp()) if p.completed else None
     c.execute('UPDATE plan_items SET completed_at=? WHERE id=?', (completed_at, item_id))
+    if finalize:
+        return completion_result(c, plan, user)
+
+
+def completion_result(c, plan, user):
     rows = item_rows(c, plan['id'])
     try:
         _, notes, starts, windows = decode_plan(plan)
@@ -83,6 +94,19 @@ def save_item_completion(c, plan, item_id, p, user):
     updated = dict(c.execute('SELECT * FROM plans WHERE id=?', (plan['id'],)).fetchone())
     logs = [dict(row) for row in c.execute('SELECT * FROM study_logs WHERE user_id=? ORDER BY id DESC', (user['id'],))]
     return {'plan': updated, 'items': rows, 'study_logs': logs}
+
+
+@app.patch('/plans/{plan_id}/items/completion')
+def complete_items(plan_id: int, p: BulkCompletionRequest, user=Depends(current_user)):
+    with connect() as c:
+        c.execute('BEGIN IMMEDIATE')
+        plan = c.execute('SELECT * FROM plans WHERE id=? AND user_id=?', (plan_id, user['id'])).fetchone()
+        if not plan:
+            raise HTTPException(404, '計畫不存在')
+        completion = CompletionRequest(completed=True, original_content=p.original_content)
+        for item_id in dict.fromkeys(p.item_ids):
+            save_item_completion(c, plan, item_id, completion, user, finalize=False)
+        return completion_result(c, plan, user)
 
 
 @app.patch('/plan-items/{item_id}/completion')

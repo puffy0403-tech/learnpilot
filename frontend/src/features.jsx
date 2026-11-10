@@ -6,7 +6,7 @@ const itemKind=r=>['blocked','todo','study'].includes(r.kind)?r.kind:({'保留�
 const kindName=r=>({blocked:'保留空白',todo:'固定待辦',study:'讀書計畫'}[itemKind(r)]||'讀書計畫');
 const stamp=r=>new Date(`${r.date}T${r.start_time||'08:00'}:00`).getTime();
 export function Reservations({items,setItems,start,title='先保留空白時間與固定待辦',description='保留時間不會排入學習。固定待辦也會佔用時段；AI 只安排剩餘空檔（依每日開始時間至 22:00）。'}){return <><h3>{title}</h3><p>{description}</p>{items.map((r,i)=><div className={'planrow reservation-row '+itemKind(r)} key={i}><span className="reservation-kind">{kindName(r)}</span><label>日期<input type="date" value={r.date} onChange={e=>setItems(items.map((x,j)=>j===i?{...x,date:e.target.value}:x))}/></label><label>開始時間<input type="time" value={r.start_time} onChange={e=>setItems(items.map((x,j)=>j===i?{...x,start_time:e.target.value}:x))}/></label><label>分鐘<input type="number" min="1" max="1440" value={r.minutes} onChange={e=>setItems(items.map((x,j)=>j===i?{...x,minutes:e.target.valueAsNumber}:x))}/></label><label>說明<input value={r.content} onChange={e=>setItems(items.map((x,j)=>j===i?{...x,content:e.target.value}:x))}/></label><button className="ghost" onClick={()=>setItems(items.filter((_,j)=>j!==i))}>移除</button></div>)}<div className="actions">{[['blocked','保留空白'],['todo','固定待辦']].map(([kind,label])=><button key={kind} className={'ghost reservation-add '+kind} onClick={()=>setItems([...items,{date:start,start_time:'12:00',minutes:120,subject:label,content:'',kind}])}>＋{label}</button>)}</div></>}
-export function Calendar({rows,start,onStart,onComplete}) {
+export function Calendar({rows,start,onStart,onComplete,onBulkComplete}) {
   const segments=rows.flatMap((r,itemIndex)=>{
     const beginAt=timeMinutes(planStart(r)),duration=Number(r.minutes),end=beginAt+duration;
     const parts=[];
@@ -20,12 +20,24 @@ export function Calendar({rows,start,onStart,onComplete}) {
     return parts;
   });
   const [selectedKey,select]=useState(null),[saving,setSaving]=useState(false),[error,setError]=useState('');
+  const [multi,setMulti]=useState(false),[picked,setPicked]=useState([]),[bulkMessage,setBulkMessage]=useState('');
   const [currentDay,setCurrentDay]=useState(()=>dateISO(new Date()));
   const selected=segments.find(r=>r.key===selectedKey);
   useEffect(()=>{const id=setInterval(()=>setCurrentDay(dateISO(new Date())),30000);return()=>clearInterval(id)},[]);
   const dates=Array.from({length:7},(_,i)=>{const d=new Date(start+'T00:00:00');d.setDate(d.getDate()+i);return dateISO(d)});
   const completed=r=>r.kind==='study'&&r.completed===true;
   const label=r=>completed(r)?'✓ 已完成':kindName(r);
+  const eligible=rows.filter(r=>itemKind(r)==='study'&&!r.completed&&r.plan_item_id&&dates.includes(r.date));
+  const eligibleIds=[...new Set(eligible.map(r=>r.plan_item_id))];
+  const chosen=picked.filter(id=>eligibleIds.includes(id));
+  function toggleItem(id){setPicked(current=>current.includes(id)?current.filter(x=>x!==id):[...current,id]);setBulkMessage('');setError('')}
+  async function completePicked(){
+    if(saving||!chosen.length)return;
+    setSaving(true);setError('');setBulkMessage('');
+    try{await onBulkComplete(chosen);setPicked([]);setBulkMessage(`已完成 ${chosen.length} 項讀書計畫，並同步更新學習紀錄。`)}
+    catch(e){setError(e.message||'批次儲存失敗，請重試。')}
+    finally{setSaving(false)}
+  }
   async function changeCompletion(value){
     if(saving||!selected)return;
     setSaving(true);setError('');
@@ -34,6 +46,13 @@ export function Calendar({rows,start,onStart,onComplete}) {
   }
   function close(){if(!saving){select(null);setError('')}}
   return <>
+    {onBulkComplete&&<div className="calendar-bulk-controls">
+      <div className="actions"><button className="ghost" disabled={saving} aria-pressed={multi} onClick={()=>{setMulti(!multi);setPicked([]);select(null);setError('');setBulkMessage('')}}>{multi?'結束多選':'多選讀書計畫'}</button>
+      {multi&&<><button className="ghost" disabled={saving||!eligibleIds.length} onClick={()=>{setPicked(eligibleIds);setBulkMessage('')}}>全選本週未完成</button><button className="ghost" disabled={saving||!chosen.length} onClick={()=>setPicked([])}>清除選取</button><button disabled={saving||!chosen.length} onClick={completePicked}>{saving?'正在儲存…':`一鍵完成已選取的讀書計畫（${chosen.length} 項）`}</button></>}</div>
+      {multi&&<p>點選下方讀書卡片可選取或取消選取。已選 {chosen.length} 項；同一計畫的跨時段分段只計算一次。已完成、固定待辦及保留空白不列入選取。</p>}
+      {bulkMessage&&<p className="success" role="status">{bulkMessage}</p>}
+      {error&&!selected&&<p className="error" role="alert">{error}</p>}
+    </div>}
     <div className="calendar-legend" aria-label="日曆顏色說明">
       <span className="legend blocked">保留空白</span><span className="legend todo">固定待辦</span>
       <span className="legend study">讀書計畫</span><span className="legend completed">✓ 已完成</span><span className="legend today">今天</span>
@@ -49,7 +68,8 @@ export function Calendar({rows,start,onStart,onComplete}) {
         const items=segments.filter(r=>r.date===d&&timeMinutes(r.start_time)<slot*120+120&&timeMinutes(r.start_time)+Math.max(1,r.minutes)>slot*120);
         return <td key={d} className={(d===currentDay?'today-column ':'')+(!items.length?'empty-slot':'')}>
           {!items.length&&<span className="empty-label">空白／未安排</span>}
-          {items.map(r=><button data-kind={r.kind} data-completed={completed(r)?'true':'false'} className={'task '+r.kind+(completed(r)?' completed':'')} key={r.key} onClick={()=>{select(r.key);setError('')}}>
+          {items.map(r=><button data-kind={r.kind} data-completed={completed(r)?'true':'false'} className={'task '+r.kind+(completed(r)?' completed':'')+(multi&&chosen.includes(r.plan_item_id)?' bulk-selected':'')} key={r.key} disabled={saving||(multi&&!eligibleIds.includes(r.plan_item_id))} aria-pressed={multi?chosen.includes(r.plan_item_id):undefined} onClick={()=>{if(multi){toggleItem(r.plan_item_id)}else{select(r.key);setError('')}}}>
+            {multi&&eligibleIds.includes(r.plan_item_id)&&<span className="selection-label">{chosen.includes(r.plan_item_id)?'☑ 已選取':'☐ 選取'}</span>}
             <small className="kind-label">{label(r)}</small><b>{r.subject}</b>
             <span>{r.start_time} · {r.minutes} 分鐘</span><span className="preview">{r.content||'點選查看詳細內容'}</span>
           </button>)}
