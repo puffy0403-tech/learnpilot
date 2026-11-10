@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from datetime import date, timedelta
 from typing import Literal
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from database import connect, current_user
 from ai_service import ask_ai, configuration
@@ -285,6 +285,24 @@ async def chat_generate(p: Context, user=Depends(current_user)):
         return {**result,'source':source,'week_start':str(p.week_start),'revision':p.revision,'chat_snapshot_id':snapshot_id}
     except (ValueError,KeyError,TypeError) as exc:
         raise HTTPException(422,str(exc)) from None
+
+
+@router.get('/plans/search')
+def search_saved_plans(q: str = Query(default='', max_length=200), user=Depends(current_user)):
+    term = q.strip().casefold()
+    with connect() as c:
+        rows = c.execute('''SELECT p.id, p.plan_number, p.week_start, p.content,
+            s.messages, s.summary FROM plans p
+            LEFT JOIN plan_chat_snapshots s ON s.id=p.chat_snapshot_id AND s.user_id=p.user_id
+            WHERE p.user_id=? ORDER BY p.id DESC''', (user['id'],)).fetchall()
+    matched = []
+    for row in rows:
+        messages = json.loads(row['messages']) if row['messages'] else []
+        text = '\n'.join([row['plan_number'] or '', row['week_start'], row['content'], row['summary'] or '',
+                          *(message['content'] for message in messages)])
+        if not term or term in text.casefold():
+            matched.append(row['id'])
+    return {'plan_ids': matched}
 
 
 @router.get('/plans/{plan_id}/conversation')

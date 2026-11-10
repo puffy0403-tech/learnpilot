@@ -127,3 +127,37 @@ def test_reset_during_generation_rejects_stale_snapshot(conversations, monkeypat
     assert a.post('/planning-chat/generate', json={'week_start': WEEK, 'revision': state['revision']}).status_code == 409
     with database.connect() as c:
         assert c.execute('SELECT count(*) FROM plan_chat_snapshots').fetchone()[0] == before
+
+
+def test_search_saved_plans_by_original_dialogue_and_account(conversations):
+    a, b = conversations
+    draft, original = generate(a, '特殊需求：只在晚餐後練習發音，保留100%_彈性')
+    first = save(a, draft)
+    assert '晚餐後練習發音' not in first['content']
+    other_draft, _ = generate(b, '特殊需求：只在晚餐後練習發音')
+    other = save(b, other_draft)
+    a.post('/planning-chat/reset', json={'week_start': WEEK})
+    later, _ = generate(a, '新的需求：閱讀文章')
+    second = save(a, later)
+    assert a.get('/plans/search', params={'q': '晚餐後練習發音'}).json()['plan_ids'] == [first['id']]
+    assert b.get('/plans/search', params={'q': '晚餐後練習發音'}).json()['plan_ids'] == [other['id']]
+    assert a.get('/plans/search', params={'q': '100%_'}).json()['plan_ids'] == [first['id']]
+    assert a.get('/plans/search', params={'q': first['plan_number'].lower()}).json()['plan_ids'] == [first['id']]
+    assert a.get('/plans/search', params={'q': '完全不存在'}).json()['plan_ids'] == []
+    assert a.get('/plans/search').json()['plan_ids'] == [second['id'], first['id']]
+    assert TestClient(app).get('/plans/search').status_code == 401
+    assert a.get('/plans/search', params={'q': 'x' * 201}).status_code == 422
+    before = a.get(f'/plans/{first["id"]}/conversation').json()
+    assert before['snapshot']['messages'] == original
+    edited = a.patch(f'/data/plans/{first["id"]}', json={'selected_at': '2026-11-10T12:00:00Z'})
+    assert edited.status_code == 200
+    assert a.get(f'/plans/{first["id"]}/conversation').json() == before
+    assert a.delete(f'/data/plans/{first["id"]}').status_code == 200
+    assert a.get('/plans/search', params={'q': '晚餐後練習發音'}).json()['plan_ids'] == []
+
+
+def test_search_manual_plans_without_snapshot(conversations):
+    a, _ = conversations
+    plan = a.post('/data/plans', json={'week_start': WEEK, 'content': '手動建立的英文複習'}).json()
+    assert a.get('/plans/search', params={'q': '手動建立'}).json()['plan_ids'] == [plan['id']]
+    assert a.get(f'/plans/{plan["id"]}/conversation').json()['snapshot'] is None
