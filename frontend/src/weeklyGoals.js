@@ -6,9 +6,9 @@ export function weekRange(day){
  return {start:iso(start),end:iso(end)};
 }
 export function currentWeekGoals(goals,day){
- const {start,end}=weekRange(day);
- // Filter by week before choosing the latest goal per subject, so a goal
- // created for next week does not hide an existing goal for this week.
- return goals.filter(g=>!g.target_date||(g.target_date>=start&&g.target_date>=day&&g.target_date<=end))
-   .sort((a,b)=>b.id-a.id).filter((g,i,a)=>a.findIndex(x=>x.subject===g.subject)===i);
+ // A target date is the deadline, not the week when the goal starts.
+ // The latest setting replaces the previous setting for the same subject.
+ return [...goals].sort((a,b)=>b.id-a.id)
+   .filter((g,i,a)=>a.findIndex(x=>x.subject===g.subject)===i)
+   .filter(g=>!g.target_date||g.target_date>=day);
 }
