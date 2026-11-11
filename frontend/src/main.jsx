@@ -26,7 +26,7 @@ function App(){
 const [currentDate,setCurrentDate]=useState(today);
 useEffect(()=>{const refresh=()=>setCurrentDate(today());const timer=setInterval(refresh,30000);window.addEventListener('focus',refresh);document.addEventListener('visibilitychange',refresh);return()=>{clearInterval(timer);window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',refresh)}},[]);
 const [resetToken,RT]=useState(consumeResetToken),[forgotPassword,FP]=useState(false);
-const [session,S]=useState(null),[ready,R]=useState(false),[page,P]=useState('本週目標進度'),[data,D]=useState({goals:[],study_logs:[],plans:[],reports:[]}),[error,E]=useState(''),[message,M]=useState(''),[busy,B]=useState(false),[register,Q]=useState(false),[rows,W]=useState([blank()]),[notes,N]=useState(''),[start,T]=useState(monday(true)),[editing,I]=useState(null),[calendar,C]=useState([]),[calendarStart,CS]=useState(monday(true));
+const [session,S]=useState(null),[ready,R]=useState(false),[page,P]=useState('我的學習日曆'),[data,D]=useState({goals:[],study_logs:[],plans:[],reports:[]}),[error,E]=useState(''),[message,M]=useState(''),[busy,B]=useState(false),[register,Q]=useState(false),[rows,W]=useState([blank()]),[notes,N]=useState(''),[start,T]=useState(monday(true)),[editing,I]=useState(null),[calendar,C]=useState([]),[calendarStart,CS]=useState(monday(true));
 const [availability,AW]=useState(null);
 const [calendarNotes,CN]=useState('');
 const [chatSnapshotId,SI]=useState(null);
