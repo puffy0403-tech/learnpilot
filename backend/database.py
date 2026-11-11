@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from datetime import date, datetime
 from local_storage import default_database_path
 from plan_items import ensure_schema, sync_plan_items
+from learning_metrics import log_views
 
 DB_PATH = Path(os.getenv('DATABASE_PATH') or default_database_path(Path(__file__).parent))
 def connect():
@@ -53,6 +54,17 @@ def initialize():
         c.execute('CREATE UNIQUE INDEX IF NOT EXISTS plans_number_unique ON plans(plan_number)')
         if 'inherited_messages' not in {row[1] for row in c.execute('PRAGMA table_info(planning_chats)')}:
             c.execute('ALTER TABLE planning_chats ADD COLUMN inherited_messages INTEGER NOT NULL DEFAULT 0')
+        columns={row[1] for row in c.execute('PRAGMA table_info(study_logs)')}
+        if 'planned_minutes' not in columns:
+            c.execute('ALTER TABLE study_logs ADD COLUMN planned_minutes REAL')
+            c.execute("ALTER TABLE study_logs ADD COLUMN time_source TEXT NOT NULL DEFAULT 'legacy'")
+            c.execute('UPDATE study_logs SET planned_minutes=(SELECT planned_minutes FROM plan_items WHERE id=study_logs.plan_item_id) WHERE plan_item_id IS NOT NULL')
+            c.execute("UPDATE study_logs SET time_source='planned' WHERE plan_item_id IS NOT NULL AND minutes=planned_minutes AND note LIKE '讀書計畫完成自動紀錄：%'")
+        c.execute('''CREATE TABLE IF NOT EXISTS learning_feedback(
+            study_log_id INTEGER PRIMARY KEY REFERENCES study_logs(id) ON DELETE CASCADE,
+            topic TEXT NOT NULL DEFAULT '', understanding INTEGER CHECK(understanding BETWEEN 1 AND 4),
+            difficulty TEXT NOT NULL DEFAULT '', actual_minutes INTEGER CHECK(actual_minutes BETWEEN 0 AND 1440),
+            updated_at TEXT NOT NULL)''')
         count = c.execute('SELECT count(*) FROM users').fetchone()[0]
     logging.getLogger('uvicorn.error.storage').info('DATA_LOCATION: %s | 帳號數：%s', DB_PATH.resolve(), count)
 
@@ -145,7 +157,9 @@ def add_routes(app):
     @app.get('/data/{table}')
     def listing(table:str,user=Depends(current_user)):
         table_check(table)
-        with connect() as c: return [dict(r) for r in c.execute(f'SELECT * FROM {table} WHERE user_id=? ORDER BY id DESC',(user['id'],))]
+        with connect() as c:
+            rows=c.execute(f'SELECT * FROM {table} WHERE user_id=? ORDER BY id DESC',(user['id'],)).fetchall()
+            return log_views(c,rows) if table=='study_logs' else [dict(r) for r in rows]
     def validate(table,p):
         try: return MODELS[table].model_validate(p).model_dump(mode='json')
         except ValidationError: raise HTTPException(422,'輸入資料有誤，請檢查日期、科目與數值')
@@ -159,12 +173,13 @@ def add_routes(app):
             if table == 'plans':
                 validate_snapshot(c, values['chat_snapshot_id'], user['id'])
                 values['plan_number'] = allocate_plan_number(c)
+            if table=='study_logs': values['time_source']='manual'
             cur=c.execute(f"INSERT INTO {table} ({','.join(values)}) VALUES ({','.join('?' for _ in values)})",list(values.values()))
             row = dict(c.execute(f'SELECT * FROM {table} WHERE id=?',(cur.lastrowid,)).fetchone())
             if table == 'plans':
                 try: sync_plan_items(c, row)
                 except ValueError as exc: raise HTTPException(422, str(exc)) from None
-            return row
+            return log_views(c,[row])[0] if table=='study_logs' else row
     @app.patch('/data/{table}/{record_id}')
     def update(table:str,record_id:int,p:dict,user=Depends(current_user)):
         table_check(table)
@@ -180,12 +195,15 @@ def add_routes(app):
                 if row['chat_snapshot_id'] and values['chat_snapshot_id'] != row['chat_snapshot_id']:
                     raise HTTPException(409, '此計畫的原始對話已保留，若要使用另一份對話請另存新計畫。')
                 validate_snapshot(c, values['chat_snapshot_id'], user['id'])
+            if table=='study_logs' and 'minutes' in p and values['minutes']!=row['minutes']:
+                values['time_source']='manual'
+                c.execute('UPDATE learning_feedback SET actual_minutes=? WHERE study_log_id=?',(values['minutes'],record_id))
             c.execute(f"UPDATE {table} SET {','.join(k+'=?' for k in values)} WHERE id=? AND user_id=?",[*values.values(),record_id,user['id']])
             updated = dict(c.execute(f'SELECT * FROM {table} WHERE id=?',(record_id,)).fetchone())
             if table == 'plans' and (values['content'] != row['content'] or values['week_start'] != row['week_start']):
                 try: sync_plan_items(c, updated)
                 except ValueError as exc: raise HTTPException(422, str(exc)) from None
-            return updated
+            return log_views(c,[updated])[0] if table=='study_logs' else updated
     @app.delete('/data/{table}/{record_id}')
     def delete(table:str,record_id:int,user=Depends(current_user)):
         table_check(table)

@@ -99,3 +99,5 @@ select{font:inherit;width:100%;padding:10px;border:1px solid #d4ded8;border-radi
 .week-calendar .task:disabled{cursor:default}
 .week-calendar .task:disabled:not(.completed){opacity:.65}
 .selection-label{font-weight:700;color:#1e40af}
+
+.learning-feedback{margin:18px 0;padding:16px;background:#f1f7f3;border:1px solid #d4e5df;border-radius:12px;text-align:left}.learning-feedback fieldset{border:0;padding:0;min-width:0}.feedback-summary{font-size:14px;color:#486157}.feedback-difficulty{white-space:pre-wrap;overflow-wrap:anywhere}

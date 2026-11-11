@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 from plan_items import item_rows, decode_plan, timestamp
 from learning_context import personal_learning_context, GUIDANCE
+from learning_metrics import log_views
 from planning import build_rule_based_plan, editable_plan_data, serialize_editable_plan, schedule_available, ensure_study_content, fit_calendar_slots, plan_daily_starts, plan_availability
 
 load_dotenv()
@@ -44,6 +45,8 @@ app.include_router(password_reset_router)
 
 from reports import router as reports_router
 app.include_router(reports_router)
+from feedback import router as feedback_router
+app.include_router(feedback_router)
 
 @app.get("/health")
 def health():
@@ -72,9 +75,9 @@ def save_item_completion(c, plan, item_id, p, user, finalize=True):
         minutes = float(item['planned_minutes'])
         if not minutes.is_integer():
             raise HTTPException(422, '學習紀錄須為整數分鐘，請先調整此計畫時數。')
-        c.execute('INSERT INTO study_logs(user_id,study_date,subject,minutes,note,plan_item_id) VALUES(?,?,?,?,?,?)',
+        c.execute('INSERT INTO study_logs(user_id,study_date,subject,minutes,note,plan_item_id,planned_minutes,time_source) VALUES(?,?,?,?,?,?,?,?)',
             (user['id'], item['scheduled_date'], item['subject'], int(minutes),
-             ('讀書計畫完成自動紀錄：' + item['content'])[:20000], item_id))
+             ('讀書計畫完成自動紀錄：' + item['content'])[:20000], item_id, minutes, 'planned'))
     elif not p.completed and log:
         c.execute('DELETE FROM study_logs WHERE id=? AND user_id=?', (log['id'], user['id']))
     completed_at = (item['completed_at'] or timestamp()) if p.completed else None
@@ -92,7 +95,7 @@ def completion_result(c, plan, user):
         raise HTTPException(422, str(exc)) from None
     c.execute('UPDATE plans SET content=? WHERE id=?', (content, plan['id']))
     updated = dict(c.execute('SELECT * FROM plans WHERE id=?', (plan['id'],)).fetchone())
-    logs = [dict(row) for row in c.execute('SELECT * FROM study_logs WHERE user_id=? ORDER BY id DESC', (user['id'],))]
+    logs = log_views(c,c.execute('SELECT * FROM study_logs WHERE user_id=? ORDER BY id DESC', (user['id'],)).fetchall())
     return {'plan': updated, 'items': rows, 'study_logs': logs}
 
 
@@ -202,8 +205,8 @@ def user_study_logs(user_id: int, subject: str = '', from_date: date | None = No
         clauses.append('study_date<=?'); params.append(str(to_date))
     if q.strip():
         term = q.strip().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-        clauses.append("(subject LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\')")
-        params.extend(['%'+term+'%', '%'+term+'%'])
+        clauses.append("(subject LIKE ? ESCAPE '\\' OR note LIKE ? ESCAPE '\\' OR EXISTS(SELECT 1 FROM learning_feedback f WHERE f.study_log_id=study_logs.id AND (f.topic LIKE ? ESCAPE '\\' OR f.difficulty LIKE ? ESCAPE '\\')))")
+        params.extend(['%'+term+'%']*4)
     with connect() as c:
-        items = [dict(row) for row in c.execute('SELECT * FROM study_logs WHERE '+ ' AND '.join(clauses)+' ORDER BY study_date DESC,id DESC', params)]
+        items = log_views(c,c.execute('SELECT * FROM study_logs WHERE '+ ' AND '.join(clauses)+' ORDER BY study_date DESC,id DESC', params).fetchall())
     return {'user_id': user['id'], 'items': items}

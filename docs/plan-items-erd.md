@@ -104,3 +104,25 @@ erDiagram
 `plans.plan_number` 為 TEXT、唯一索引（UK），由系統配置如 `LP-000001`；原 id 主鍵與既有外鍵維持原樣。`plan_number_sequence.number` 為 INTEGER PRIMARY KEY AUTOINCREMENT，用來配置不重用的序號，沒有對外業務關聯。編輯計畫不接受修改編號。序號以資料庫為範圍共用。
 
 接續原始對話時，不更動 plan_chat_snapshots 或 plans；僅複製快照至 planning_chats 的原週次工作對話。planning_chats.inherited_messages 為 INTEGER NOT NULL DEFAULT 0，用於區分歷史訊息與接續後新增的輪數，沒有新增外鍵。
+
+## 學習回饋與時間來源
+
+```mermaid
+erDiagram
+    study_logs ||--o| learning_feedback : has
+    study_logs {
+        INTEGER id PK
+        REAL planned_minutes
+        TEXT time_source
+    }
+    learning_feedback {
+        INTEGER study_log_id PK,FK
+        TEXT topic
+        INTEGER understanding
+        TEXT difficulty
+        INTEGER actual_minutes
+        TEXT updated_at
+    }
+```
+
+一筆學習紀錄最多一筆回饋。understanding 為可空 1–4 自評，不等於成績；actual_minutes 可空，代表未在回饋確認實際分鐘。study_logs.minutes 保存目前採用的分鐘；planned_minutes 保留原計畫時間供比較。time_source 為 planned／manual／self_reported／legacy。刪除紀錄會 CASCADE 刪回饋；刪除計畫則仍保留學習紀錄、原預計分鐘與回饋。learning_reports.snapshot 新保存回饋及當期成效摘要，來源變動不改舊報告。
